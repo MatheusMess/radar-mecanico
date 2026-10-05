@@ -21,6 +21,6 @@
     "@libsql/client": "^0.14.0"
   },
   "devDependencies": {
-    "vercel": "^39.0.0"
+    "vercel": "^62.4.0"
   }
 }
