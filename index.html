@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Radar Mecânico — Diagnóstico certo. Sem perder tempo. Conecte-se a oficinas parceiras, envie seus veículos e receba orçamentos.">
+<title>Radar Mecânico</title>
+<link rel="icon" href="assets/radar-mark.png" type="image/png" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="assets/radar-mark-dark.png" type="image/png" media="(prefers-color-scheme: light)">
+<link rel="apple-touch-icon" href="assets/radar-mark.png">
+<meta name="theme-color" content="#101113" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f4f5f6" media="(prefers-color-scheme: light)">
+<link rel="stylesheet" href="styles.css">
+<script>
+// Aplica o tema antes da primeira pintura para nao piscar claro em quem usa o tema escuro.
+(function () {
+  try {
+    var saved = localStorage.getItem('radar-tema');
+    var light = saved ? saved === 'light' : matchMedia('(prefers-color-scheme: light)').matches;
+    document.documentElement.classList.toggle('light', light);
+  } catch (e) {}
+})();
+</script>
+</head>
+<body>
+<div id="app"></div>
+<script src="app.js"></script>
+</body>
+</html>

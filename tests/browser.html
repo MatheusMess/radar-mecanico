@@ -1,0 +1,608 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"><title>teste de navegador</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<!--
+  Teste de interface contra a API de verdade.
+
+  Suba o servidor local (npm run dev:local) e abra /tests/browser.html num
+  navegador. O script abaixo percorre as telas usando os proprios handlers do
+  app e as chamadas de rede reais, e escreve o resultado no <pre> do rodape.
+
+  O fim da execucao e a palavra FIM; e o que o scripts/browsercheck.js procura
+  quando roda tudo sem intervencao. Esta pagina nao faz parte do site: o
+  vercel.json reescreve /tests/* para a pagina inicial, entao ela nao fica
+  publicada.
+-->
+<div id="app"></div>
+<pre id="r" style="position:fixed;left:0;bottom:0;z-index:9999;background:#000;color:#0f0;font:11px monospace;max-height:40vh;overflow:auto;margin:0;padding:6px"></pre>
+<script src="/app.js"></script>
+<script>
+// Percorre as telas reais do app, com a API real por tras, e reporta o que
+// quebrou. Este arquivo e temporario: some depois do teste.
+(async function () {
+  const linhas = [];
+  const erros = [];
+  window.addEventListener('error', (e) => erros.push(e.message));
+  window.addEventListener('unhandledrejection', (e) => erros.push('promise: ' + e.reason));
+
+  const escreva = () => { document.getElementById('r').textContent = linhas.join('\n') + '\n'; };
+  const ok = (n, c, d = '') => { linhas.push((c ? '  OK    ' : '  FALHA ') + n + (d ? ' -> ' + d : '')); escreva(); };
+  const espera = (ms) => new Promise((r) => setTimeout(r, ms));
+  const texto = () => document.querySelector('#app').textContent.replace(/\s+/g, ' ').trim();
+
+  /**
+   * Espera uma condicao virar verdadeira em vez de dormir um tempo fixo.
+   * As telas do app sao assincronas (a API responde depois do desenho), entao
+   * um sleep curto passa num banco quente e falha num banco frio.
+   */
+  async function esperaPor(descricao, condicao, ms = 12000) {
+    const passo = Date.now() + ms;
+    while (Date.now() < passo) {
+      let pronto = false;
+      try { pronto = condicao(); } catch { /* DOM ainda em troca */ }
+      if (pronto) return true;
+      await espera(120);
+    }
+    linhas.push(`  AVISO tempo esgotado esperando: ${descricao}`);
+    escreva();
+    return false;
+  }
+
+  const temCardVeiculo = () => [...document.querySelectorAll('[onclick*="vehicleModal"]')]
+    .filter((el) => /\(\d+\)/.test(el.getAttribute('onclick') || '')).length > 0;
+
+  // app.js precisa ter carregado antes de qualquer verificacao.
+  for (let i = 0; i < 60 && new Function('return typeof api;')() !== 'function'; i++) await espera(150);
+  ok('app.js carregou e definiu api()', new Function('return typeof api;')() === 'function');
+  ok('app.js carregou e definiu go()', new Function('return typeof go;')() === 'function');
+
+  for (let i = 0; i < 60 && !/Acesse sua conta/.test(texto()); i++) await espera(150);
+  ok('tela de login renderizou', /Acesse sua conta/.test(texto()));
+
+  const senha = 'Demo@2026';
+
+  // Entra como cliente de demonstracao usando o proprio login do app.
+  const r = await api('login', 'POST', { email: 'demo-cliente-diego@radar.local', password: senha });
+  ok('login pela api do app', !!(r && r.user), JSON.stringify(r).slice(0, 100));
+  me = r.user;
+
+  for (const v of ['vehicles', 'requests', 'profile', 'home', 'workshops']) {
+    window.view = v;
+    let erro = null;
+    try { go(v); await espera(400); } catch (e) { erro = e.message; }
+    // A tela so esta pronta quando o conteudo assincrono chegou.
+    if (!erro && v === 'vehicles') await esperaPor('cards da garagem', temCardVeiculo);
+    if (!erro) await espera(300);
+    ok('tela ' + v + ' renderizou', !erro && texto().length > 30, erro || 'len=' + texto().length);
+  }
+
+  // Garagem: cards, ficha do veiculo e fotos via /api/image.
+  try {
+    window.view = 'vehicles'; go('vehicles'); await espera(300);
+    await esperaPor('cards da garagem', temCardVeiculo);
+    // "Adicionar veiculo" tambem usa vehicleModal(), entao o id so vale
+    // quando o onclick traz um numero.
+    const cards = [...document.querySelectorAll('[onclick*="vehicleModal"]')]
+      .filter((el) => /\(\d+\)/.test(el.getAttribute('onclick') || ''));
+    ok('garagem lista veiculos', cards.length > 0, 'cards=' + cards.length);
+
+    // Miniatura do card: o id da foto tem de vir da API, senao aponta para id=0.
+    const thumb = document.querySelector('.vehicle-card img.vehicle-thumb');
+    const srcThumb = thumb?.getAttribute('src') || '';
+    ok('miniatura do card tem id de foto', /tipo=vehicle&id=[1-9]/.test(srcThumb), srcThumb);
+    if (thumb) {
+      const carregouThumb = await new Promise((res) => {
+        const t = new Image();
+        t.onload = () => res(t.naturalWidth > 0);
+        t.onerror = () => res(false);
+        t.src = srcThumb;
+      });
+      ok('miniatura do card carrega', carregouThumb, srcThumb);
+    }
+
+    const id = (/\((\d+)\)/.exec(cards[0]?.getAttribute('onclick') || '') || [])[1];
+    await vehiclePhotos(id);
+    await esperaPor('fotos do veiculo', () => document.querySelectorAll('.vehicle-image-preview img').length > 0);
+    await espera(200);
+    const imgs = [...document.querySelectorAll('.vehicle-image-preview img')];
+    ok('fotos do veiculo na ficha', imgs.length > 0, 'imgs=' + imgs.length);
+    const src = imgs[0]?.getAttribute('src') || '';
+    ok('url da foto usa query com ?', src.includes('/api/image?tipo=vehicle&id='), src);
+    const carregou = await new Promise((res) => {
+      if (!src) return res(false);
+      const t = new Image();
+      t.onload = () => res(t.naturalWidth > 0);
+      t.onerror = () => res(false);
+      t.src = src;
+    });
+    ok('foto do veiculo carrega de verdade', carregou);
+    closeModal(); await espera(300);
+  } catch (e) { ok('garagem + ficha do veiculo', false, e.message); }
+
+  // Rede de oficinas: card sem foto nao deve pedir /api/image.
+  try {
+    window.view = 'workshops'; go('workshops');
+    await esperaPor('cards de oficina', () => document.querySelectorAll('[onclick*="workshopDetail"]').length > 0);
+    await espera(200);
+    const cards = [...document.querySelectorAll('[onclick*="workshopDetail"]')];
+    ok('rede de oficinas lista cards', cards.length > 0, 'cards=' + cards.length);
+    const semFoto = cards.filter((c) => !(c.querySelector('.shop-photo')?.getAttribute('style') || '').includes('/api/image'));
+    ok('cards sem foto nao chamam /api/image', semFoto.length > 0, 'sem_foto=' + semFoto.length);
+    const id = (/\((\d+)\)/.exec(cards[0]?.getAttribute('onclick') || '') || [])[1];
+    await workshopDetail(id);
+    await esperaPor('ficha da oficina', () => modalAberto());
+    await espera(400);
+    const t = document.body.textContent;
+    ok('ficha da oficina abriu', /servi|Avalia|orçamento|Orçamento/i.test(t), t.slice(0, 80));
+    closeModal(); await espera(300);
+    ok('modal fecha', !modalAberto() && !document.querySelector('.modal-back'));
+  } catch (e) { ok('rede de oficinas', false, e.message); }
+
+  // Pedidos: a ficha consome /api/request-images?request_id=
+  try {
+    const rq = await api('requests');
+    ok('cliente ve os proprios pedidos', (rq.requests || []).length > 0, 'n=' + (rq.requests || []).length);
+    const alvo = (rq.requests || []).find((x) => x.image_count > 0) || (rq.requests || [])[0];
+    window.view = 'requests'; go('requests'); await espera(600);
+
+    const pics = await api(`request-images?request_id=${alvo.id}`);
+    ok('request-images?request_id responde', Array.isArray(pics.images), JSON.stringify(pics).slice(0, 80));
+
+    await detail(alvo.id);
+    await esperaPor('fotos do pedido', () => document.querySelectorAll('img[onclick*="ampliarFoto"]').length > 0);
+    await espera(200);
+    const imgs = [...document.querySelectorAll('img[onclick*="ampliarFoto"]')];
+    ok('fotos do pedido na ficha', imgs.length > 0,
+      'imgs=' + imgs.length + ' modal=' + (document.querySelector('.modal-back .modal-body')?.innerHTML.length ?? 'sem modal'));
+    const src = imgs[0]?.getAttribute('src') || '';
+    ok('url da foto do pedido', src.includes('/api/image?tipo=request&id='), src);
+    closeModal(); await espera(300);
+  } catch (e) { ok('pedidos + ficha do pedido', false, e.message); }
+
+  // Filtro de estrelas e detalhe publico da oficina.
+  try {
+    const semFiltro = await api('workshops');
+    const comFiltro = await api('workshops?min_stars=5');
+    ok('filtro min_stars aceito', Array.isArray(comFiltro.workshops));
+    ok('filtro nao amplia a lista', comFiltro.workshops.length <= semFiltro.workshops.length,
+      `${comFiltro.workshops.length} <= ${semFiltro.workshops.length}`);
+    const w = await api(`workshop?id=${semFiltro.workshops[0].id}`);
+    ok('detalhe da oficina pelo id', !!(w.workshop && w.workshop.legal_name), JSON.stringify(w).slice(0, 90));
+  } catch (e) { ok('filtro e detalhe da oficina', false, e.message); }
+
+  // Lado da oficina: login, painel de pedidos e perfil com avaliacoes.
+  try {
+    await api('login', 'POST', { email: 'demo-oficina-silva@radar.local', password: senha });
+    const s = await api('session');
+    me = s.user;
+    window.view = 'requests'; go('requests');
+    await esperaPor('pedidos da oficina', () => texto().length > 40);
+    ok('painel da oficina lista pedidos', texto().length > 30, 'len=' + texto().length);
+    window.view = 'profile'; go('profile');
+    await esperaPor('perfil da oficina', () => /Oficina|Avalia|avalia/i.test(texto()));
+    ok('perfil da oficina mostra ficha e avaliacoes', /Oficina|Avalia|avalia/i.test(texto()), texto().slice(0, 80));
+    const oficina = await api('profile');
+    ok('api profile da oficina traz workshop', !!(oficina.workshop && oficina.workshop.legal_name));
+    ok('api profile da oficina traz avaliacoes', Array.isArray(oficina.reviews));
+  } catch (e) { ok('painel da oficina', false, e.message); }
+
+  // Admin.
+  try {
+    await api('login', 'POST', { email: 'admin@radarmecanico.local', password: 'RadarAdm@2026' });
+    const s = await api('session');
+    me = s.user;
+    window.view = 'admin'; go('admin');
+    await esperaPor('tela de administracao', () => texto().length > 60);
+    ok('tela de administracao carrega', texto().length > 30, 'len=' + texto().length);
+    const u = await api('admin-users');
+    ok('admin-users lista contas', Array.isArray(u.users) && u.users.length > 0, 'n=' + (u.users || []).length);
+  } catch (e) { ok('administracao', false, e.message); }
+
+  // Cadastro pela API do app e upload real de multipart.
+  try {
+    const email = 'e2e-novo@radar.local';
+    const antes = await api('login', 'POST', { email, password: senha }).catch(() => null);
+    if (antes?.user) ok('conta de teste anterior existe', true);
+    const loginOficina = await api('login', 'POST', { email: 'demo-oficina-pneus@radar.local', password: senha });
+    me = loginOficina.user;
+    const fd = new FormData();
+    fd.append('images[]', pngBlob(), 'fachada-e2e.png');
+    const up = await apiUpload('workshop-photo', fd);
+    ok('upload multipart real aceito', up.ok === true, JSON.stringify(up).slice(0, 90));
+    const depois = await api('workshops');
+    ok('foto da oficina entra no card', depois.workshops.some((w) => w.has_photo === true),
+      'com_foto=' + depois.workshops.filter((w) => w.has_photo).length);
+  } catch (e) { ok('upload multipart', false, e.message); }
+
+  function pngBlob() {
+    // PNG 1x1 valido, em base64.
+    const b64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==';
+    const bin = atob(b64);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    return new Blob([arr], { type: 'image/png' });
+  }
+
+  // Entra como cliente antes: o bloco anterior deixa a sessao da oficina.
+  async function entrar(email, senha, papel) {
+    await api('login', 'POST', { email, password: senha });
+    const s = await api('session');
+    me = s.user;
+    window.me = s.user;
+    ok(`login como ${papel}`, s.user?.role === papel, `veio ${s.user?.role} (${email})`);
+    return s.user;
+  }
+
+  // Endereco do cliente (RF04) pelo formulario de verdade.
+  try {
+    await entrar('demo-cliente-diego@radar.local', senha, 'client');
+    window.view = 'profile'; go('profile');
+    await esperaPor('formulario de endereco', () => !!document.querySelector('#enderecoForm'));
+    await espera(200);
+    const f = document.querySelector('#enderecoForm');
+    ok('cliente ve o formulario de endereco', !!f);
+    f.cep.value = '01311-000';
+    f.cidade.value = 'Sao Paulo';
+    f.rua.value = 'Av. Paulista';
+    f.numero.value = '1000';
+    f.bairro.value = 'Bela Vista';
+    f.complemento.value = 'Conj. 12';
+    f.requestSubmit();
+    // Espera pelo endereço novo, e não por "tem linha": o seed já deixou
+    // uma linha na lista e isso faria a checagem passar antes do POST.
+    await esperaPor('endereco novo na lista', () => /Av\. Paulista/.test(document.querySelector('.endereco-lista')?.textContent || ''));
+    ok('endereco entrou na lista', /Av\. Paulista/.test(document.querySelector('.endereco-lista')?.textContent || ''),
+      (document.querySelector('.endereco-lista')?.textContent || '').replace(/\s+/g, ' ').slice(0, 120));
+    const shown = document.querySelector('.endereco-lista')?.textContent || '';
+    ok('endereco mostra cep com mascara', shown.includes('01311-000'), shown.replace(/\s+/g, ' ').slice(0, 120));
+    ok('endereco mostra rua e numero', shown.includes('Av. Paulista') && shown.includes('1000'));
+
+    // Remove o endereco novo, pelo id que a propria tela devolveu.
+    const linhaNova = [...document.querySelectorAll('.endereco-lista li')]
+      .find((li) => /Av\. Paulista/.test(li.textContent));
+    const idNovo = (linhaNova?.querySelector('button')?.getAttribute('onclick') || '').match(/\((\d+)\)/)?.[1];
+    ok('linha do endereco novo tem botao remover', !!idNovo, linhaNova?.textContent?.replace(/\s+/g, ' ').slice(0, 80));
+    removerEndereco(idNovo);
+    await esperaPor('endereco novo removido', () => !/Av\. Paulista/.test(document.querySelector('.endereco-lista')?.textContent || ''));
+    ok('endereco removido pela tela', !/Av\. Paulista/.test(document.querySelector('.endereco-lista')?.textContent || ''),
+      (document.querySelector('.endereco-lista')?.textContent || '').replace(/\s+/g, ' ').slice(0, 120));
+  } catch (e) { ok('endereco do cliente pela tela', false, e.message); }
+
+  // Catalogo de especialidades visto pela oficina (RF05).
+  try {
+    await entrar('demo-oficina-silva@radar.local', senha, 'workshop');
+    window.view = 'profile'; go('profile');
+    await esperaPor('formulario de especialidades', () => !!document.querySelector('#especialidadesForm'));
+    await espera(200);
+    const caixas = [...document.querySelectorAll('#especialidadesForm [name=especialidade]')];
+    ok('oficina ve o catalogo de especialidades', caixas.length > 0, 'caixas=' + caixas.length);
+    const marcadas = caixas.filter((c) => c.checked).length;
+    ok(' Seed marcou especialidades da oficina', marcadas > 0, 'marcadas=' + marcadas);
+    const chaves = [...document.querySelectorAll('#especialidadesForm .check-row')].map((x) => x.textContent.trim());
+    ok('catalogo traz nomes legiveis', chaves.some((x) => /Freios|Borracharia|eletrica/i.test(x)),
+      chaves.slice(0, 3).join(' | '));
+    ok('campo garagem existe', !!document.querySelector('[name=garagem]'));
+  } catch (e) { ok('especialidades pela tela', false, e.message); }
+
+  // Card da oficina mostra as etiquetas vindas do esp_ofc.
+  try {
+    await entrar('demo-cliente-diego@radar.local', senha, 'client');
+    const redes = await api('workshops');
+    const comEsp = redes.workshops.find((w) => (w.especialidades || []).length > 0);
+    ok('listagem entrega os nomes das especialidades', !!comEsp && comEsp.especialidades.every((x) => typeof x === 'string'),
+      JSON.stringify(comEsp?.especialidades?.slice(0, 3)));
+    window.view = 'workshops'; go('workshops');
+    await esperaPor('cards com etiquetas', () => document.querySelectorAll('.shop-card .tag').length > 0);
+    ok('card mostra etiquetas de especialidade', document.querySelectorAll('.shop-card .tag').length > 0,
+      'tags=' + document.querySelectorAll('.shop-card .tag').length);
+    const tagGaragem = [...document.querySelectorAll('.shop-card .tag-ok')].some((x) => /Garagem/i.test(x.textContent));
+    ok('algum card marca garagem propria', tagGaragem);
+
+    const ficha = await api('workshops');
+    const id0 = ficha.workshops[0].id;
+    await workshopDetail(id0);
+    await esperaPor('ficha da oficina', () => modalAberto());
+    await espera(300);
+    const textoFicha = document.querySelector('.modal-back .modal').textContent;
+    ok('ficha lista as especialidades', /Especialidades/.test(textoFicha));
+    closeModal(); await espera(200);
+  } catch (e) { ok('etiquetas e ficha da oficina', false, e.message); }
+
+  // Chassi no formulario do veiculo.
+  try {
+    await entrar('demo-cliente-diego@radar.local', senha, 'client');
+    window.view = 'vehicles'; go('vehicles');
+    await esperaPor('cards da garagem', temCardVeiculo);
+    vehicleModal();
+    await esperaPor('formulario de veiculo', () => !!document.querySelector('#vehicle'));
+    const fv = document.querySelector('#vehicle');
+    ok('formulario de veiculo tem campo chassi', !!fv.querySelector('[name=chassi]'));
+    fv.brand.value = 'Teste';
+    fv.model.value = 'Chassi';
+    fv.year.value = '2020';
+    fv.plate.value = 'TST-1A23';
+    fv.color.value = 'Prata';
+    fv.mileage.value = '1000';
+    fv.querySelector('[name=fuel]').value = 'Flex';
+    const chassi = fv.querySelector('[name=chassi]');
+    chassi.value = '9bwzzz3771k00abcx';
+    chassi.dispatchEvent(new Event('input', { bubbles: true }));
+    ok('mascara de chassi sobe para maiusculo', chassi.value === '9BWZZZ3771K00ABCX', chassi.value);
+  } catch (e) { ok('campo chassi pela tela', false, e.message); }
+
+  // ------------------------------------------------- Foto da oficina, de ponta a ponta
+  // Subir arquivo de verdade pelo formulario: escolher, ver a previa,
+  // publicar, conferir que a URL mudou e que da para remover.
+  try {
+    await entrar('demo-oficina-silva@radar.local', senha, 'workshop');
+    window.view = 'profile'; go('profile');
+    await esperaPor('formulario de foto', () => !!document.querySelector('#fotoDrop'));
+    await espera(200);
+
+    const drop = document.querySelector('#fotoDrop');
+    const input = document.querySelector('#fotoInput');
+    const enviar = document.querySelector('#fotoEnviar');
+    ok('area de arrastar existe', !!drop);
+    ok('input aceita so imagem', /image\/jpeg/.test(input.accept) && /image\/png/.test(input.accept) && /image\/webp/.test(input.accept),
+      input.accept);
+    ok('botao comecaria desabilitado', enviar.disabled === true);
+    ok('mostra a foto que ja estava no ar', !!document.querySelector('.foto-atual'),
+      (document.querySelector('.foto-atual')?.textContent || '').replace(/\s+/g, ' ').slice(0, 70));
+
+    const perfilAntes = await api('profile');
+    const revAntes = perfilAntes.foto?.photo_rev;
+
+    // Arquivo grande: a tela tem que reduzir antes de subir.
+    const grande = await criarPng(2400, 1200, [[220, 120, 40], [40, 90, 200]]);
+    await escolherArquivoFoto(input, new File([grande], 'fachada-nova.png', { type: 'image/png' }));
+    await esperaPor('previa da foto', () => document.querySelector('#fotoEnviar')?.disabled === false);
+    const info = document.querySelector('.foto-preview-info')?.textContent || '';
+    ok('previa mostra a imagem escolhida', !!document.querySelector('#fotoPreview img'));
+    ok('previa informa o tamanho final', /\d+×\d+ px/.test(info), info.replace(/\s+/g, ' ').slice(0, 80));
+    ok('previa avisa que redimensionou', /redimensionada/.test(info), info.replace(/\s+/g, ' ').slice(0, 90));
+    ok('previa fica dentro de 2 MB', (() => {
+      const m = /·\s*(\d+)\s*KB/.exec(info);
+      return m ? Number(m[1]) <= 2048 : false;
+    })(), info.replace(/\s+/g, ' ').slice(0, 80));
+    ok('botao habilita depois da escolha', enviar.disabled === false);
+
+    // Arquivo invalido tem de ser recusado antes de qualquer envio.
+    await escolherArquivoFoto(input, new File(['nao sou imagem'], 'ruim.txt', { type: 'text/plain' }));
+    await esperaPor('erro do tipo de arquivo', () => !!document.querySelector('.erro-inline'));
+    ok('tipo invalido recusado na tela', /JPG, PNG ou WEBP/.test(document.querySelector('.erro-inline')?.textContent || ''),
+      (document.querySelector('.erro-inline')?.textContent || '').slice(0, 80));
+    ok('botao volta a desabilitar', document.querySelector('#fotoEnviar').disabled === true);
+
+    // Publica de verdade.
+    await escolherArquivoFoto(input, new File([grande], 'fachada-nova.png', { type: 'image/png' }));
+    await esperaPor('previa pronta', () => document.querySelector('#fotoEnviar')?.disabled === false);
+    document.querySelector('#shopPhotoForm').requestSubmit();
+    await esperaPor('publicacao concluida', async () => true);
+    await esperaPor('previa limpa', () => !document.querySelector('#fotoPreview img'));
+    const previa = document.querySelector('#fotoPreview');
+    ok('previa some depois de publicar', !previa || previa.hidden || !previa.textContent.trim(),
+      (previa?.textContent || '').replace(/\s+/g, ' ').slice(0, 60));
+    ok('bloco de foto publicada reaparece', !!document.querySelector('.foto-atual'));
+
+    const perfilDepois = await api('profile');
+    ok('revisao da foto mudou', Number(perfilDepois.foto?.photo_rev) > Number(revAntes),
+      `${revAntes} -> ${perfilDepois.foto?.photo_rev}`);
+    ok('foto continua publicada', perfilDepois.foto?.has_photo === true);
+
+    const miniAtual = document.querySelector('.foto-atual-thumb')?.getAttribute('style') || '';
+    ok('miniatura da foto publicada usa a revisao nova',
+      miniAtual.includes(`&v=${Number(perfilDepois.foto?.photo_rev)}`), miniAtual.slice(0, 90));
+
+    // A URL da imagem na rede tem que carregar a revisao nova.
+    await entrar('demo-cliente-diego@radar.local', senha, 'client');
+    const oficinaSilva = (await api('workshops')).workshops.find((w) => /Silva/.test(w.legal_name));
+    ok('listagem entrega a revisao da foto', typeof oficinaSilva?.photo_rev === 'number', JSON.stringify(oficinaSilva?.photo_rev));
+    window.view = 'workshops'; go('workshops');
+    await esperaPor('cards da rede', () => document.querySelectorAll('.shop-card').length > 0);
+    // A rede vem ordenada por nota: o card procurado nao e necessariamente o
+    // primeiro, entao o procura pelo id que veio da API.
+    // O onclick fica no botao dentro do card, nao no article.
+    const cardSilva = [...document.querySelectorAll('.shop-card')]
+      .find((c) => [...c.querySelectorAll('button')]
+        .some((b) => new RegExp(`workshopDetail\\(${oficinaSilva.id}\\)`).test(b.getAttribute('onclick') || '')));
+    ok('card da oficina procurada existe', !!cardSilva,
+      [...document.querySelectorAll('.shop-card')].length + ' card(s) na tela');
+    const estilo = cardSilva?.querySelector('.shop-photo')?.getAttribute('style') || '';
+    ok('card usa a revisao na URL', new RegExp(`tipo=workshop&id=${oficinaSilva.id}&v=${oficinaSilva.photo_rev}`).test(estilo),
+      estilo.slice(0, 90));
+    const carregou = await new Promise((res) => {
+      const m = /url\('([^']+)'\)/.exec(estilo);
+      if (!m) return res(false);
+      const t = new Image();
+      t.onload = () => res(t.naturalWidth > 0);
+      t.onerror = () => res(false);
+      t.src = m[1];
+    });
+    ok('foto nova carrega no card da rede', carregou);
+  } catch (e) { ok('foto da oficina de ponta a ponta', false, e.message); }
+
+  // Remover a foto.
+  try {
+    await entrar('demo-oficina-silva@radar.local', senha, 'workshop');
+    window.view = 'profile'; go('profile');
+    await esperaPor('botao remover', () => !!document.querySelector('#removerFotoBtn'));
+    ok('botao de remover existe', !!document.querySelector('#removerFotoBtn'));
+    window.confirm = () => true;   // o app pergunta antes de remover
+    document.querySelector('#removerFotoBtn').click();
+    await esperaPor('foto removida', async () => true);
+    await esperaPor('aviso de sem foto', () => /ainda não tem foto/.test(document.querySelector('#app')?.textContent || ''));
+    const perfil = await api('profile');
+    ok('perfil diz que nao ha foto', perfil.foto?.has_photo === false, JSON.stringify(perfil.foto));
+    const img404 = await fetch(`/api/image?tipo=workshop&id=${perfil.workshop.id}`).catch(() => null);
+    ok('endpoint de imagem responde 404 sem foto', !img404 || img404.status === 404, String(img404?.status));
+
+    // Devolve a foto, para nao deixar a rede sem imagem.
+    await escolherArquivoFoto(document.querySelector('#fotoInput'), new File([await criarPng(600, 400, [[30, 90, 160], [230, 200, 60]])], 'restaurada.png', { type: 'image/png' }));
+    await esperaPor('previa de restauracao', () => document.querySelector('#fotoEnviar')?.disabled === false);
+    document.querySelector('#shopPhotoForm').requestSubmit();
+    await esperaPor('foto restaurada', () => !document.querySelector('#fotoDrop'));
+    const volta = await api('profile');
+    ok('foto restaurada', volta.foto?.has_photo === true);
+  } catch (e) { ok('remover e restaurar a foto', false, e.message); }
+
+  /** PNG via canvas: bytes de verdade, para o upload nao ser simulado. */
+  async function criarPng(largura, altura, cores) {
+    const c = document.createElement('canvas');
+    c.width = largura;
+    c.height = altura;
+    const ctx = c.getContext('2d');
+    const g = ctx.createLinearGradient(0, 0, largura, altura);
+    g.addColorStop(0, `rgb(${cores[0].join(',')})`);
+    g.addColorStop(1, `rgb(${cores[1].join(',')})`);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, largura, altura);
+    ctx.fillStyle = 'rgba(255,255,255,.75)';
+    ctx.fillRect(largura * 0.15, altura * 0.25, largura * 0.7, altura * 0.5);
+    return await new Promise((res) => c.toBlob((b) => res(b), 'image/png'));
+  }
+
+  // --------------------------------------------- Zoom da foto sobre um modal
+  // O bug reportado: abrir a foto ampliada sobre a lista de fotos e fechar
+  // sumia com a lista de baixo, deixando a foto aberta.
+  try {
+    await entrar('demo-cliente-diego@radar.local', senha, 'client');
+    // As tentativas anteriores podem ter deixado camadas abertas; comecar do
+    // zero senao a contagem de camadas nao diz nada.
+    while (profundidadeModal()) fecharModal();
+    await esperaPor('tela limpa', () => document.querySelectorAll('.modal-back').length === 0);
+
+    window.view = 'vehicles'; go('vehicles');
+    await esperaPor('cards da garagem', temCardVeiculo);
+    const cards = [...document.querySelectorAll('[onclick*="vehicleModal"]')]
+      .filter((el) => /\(\d+\)/.test(el.getAttribute('onclick') || ''));
+    const idVeic = (/\((\d+)\)/.exec(cards[0].getAttribute('onclick')) || [])[1];
+    await vehiclePhotos(idVeic);
+    await esperaPor('lista de fotos', () => document.querySelectorAll('.vehicle-image-preview img').length > 0);
+    ok('a lista de fotos abriu', modalAberto() && profundidadeModal() === 1,
+      'camadas=' + profundidadeModal());
+
+    const primeiroDaLista = document.querySelector('.vehicle-image-preview img');
+    const srcDaFoto = primeiroDaLista.getAttribute('src');
+    ok('a foto da lista tem onclick de ampliar', /ampliarFoto/.test(primeiroDaLista.getAttribute('onclick') || ''));
+
+    // A pilha e o DOM precisam concordar: e disso que depende o "fechar".
+    const bate = (onde) => {
+      const n = document.querySelectorAll('.modal-back').length;
+      if (n !== profundidadeModal()) {
+        ok(`pilha e DOM batem (${onde})`, false, `pilha=${profundidadeModal()} dom=${n}`);
+        return false;
+      }
+      return true;
+    };
+    ok('pilha e DOM batem no inicio', bate('inicio'), `pilha=${profundidadeModal()} dom=${document.querySelectorAll('.modal-back').length}`);
+
+    // Clica na foto: abre o zoom por cima.
+    primeiroDaLista.click();
+    await esperaPor('zoom aberto', () => profundidadeModal() === 2);
+    ok('ampliar abre uma segunda camada', profundidadeModal() === 2, 'camadas=' + profundidadeModal());
+    bate('depois de ampliar');
+
+    const tras = [...document.querySelectorAll('.modal-back')];
+    ok('existem dois fundos na tela', tras.length === 2, 'fundos=' + tras.length);
+    const deCima = tras[tras.length - 1];
+    const deBaixo = tras[0];
+    ok('a camada de cima e o zoom', deCima.classList.contains('modal-foto'));
+    ok('a camada de baixo esta marcada como fundo', deBaixo.classList.contains('abaixo'));
+    ok('a camada de cima esta acima no z-index',
+      Number(getComputedStyle(deCima).zIndex) > Number(getComputedStyle(deBaixo).zIndex),
+      `${getComputedStyle(deBaixo).zIndex} < ${getComputedStyle(deCima).zIndex}`);
+    ok('o zoom mostra a imagem em tamanho grande',
+      !!deCima.querySelector('.lightbox img') &&
+      deCima.querySelector('.lightbox img').getAttribute('src') === srcDaFoto,
+      deCima.querySelector('.lightbox img')?.getAttribute('src') || 'sem imagem');
+    ok('a lista continua aberta atras', deBaixo.querySelectorAll('.vehicle-image-preview img').length > 0);
+
+    // Fecha o zoom pelo X. A lista tem de continuar aberta: e o bug relatado.
+    deCima.querySelector('.close').click();
+    await esperaPor('zoom fechado', () => profundidadeModal() === 1);
+    ok('fechar o zoom NAO fecha a lista', profundidadeModal() === 1, 'camadas=' + profundidadeModal());
+    bate('depois do X no zoom');
+    ok('a lista de fotos continua na tela',
+      document.querySelectorAll('.modal-back .vehicle-image-preview img').length > 0,
+      'imgs=' + document.querySelectorAll('.modal-back .vehicle-image-preview img').length);
+    ok('so restou um fundo na tela', document.querySelectorAll('.modal-back').length === 1,
+      'fundos=' + document.querySelectorAll('.modal-back').length);
+    ok('a camada que sobrou nao esta mais como fundo',
+      !document.querySelector('.modal-back').classList.contains('abaixo'));
+
+    // Clicar na propria imagem volta para a lista.
+    document.querySelector('.vehicle-image-preview img').click();
+    await esperaPor('zoom pelo clique na imagem', () => profundidadeModal() === 2);
+    ok('zoom tem imagem para clicar',
+      !!document.querySelector('.modal-back.modal-foto .lightbox img'));
+    document.querySelector('.modal-back.modal-foto .lightbox img').dispatchEvent(
+      new MouseEvent('click', { bubbles: true })
+    );
+    await esperaPor('zoom fechado pelo clique na imagem', () => profundidadeModal() === 1);
+    ok('clicar na imagem fecha so o zoom', profundidadeModal() === 1, 'camadas=' + profundidadeModal());
+    ok('o clique na imagem nao deixou orfao', bate('depois do clique na imagem'),
+      `pilha=${profundidadeModal()} tela=${modaisNaTela()}`);
+
+    // Clicar no fundo (fora do conteudo) fecha a camada de cima.
+    document.querySelector('.vehicle-image-preview img').click();
+    await esperaPor('zoom de novo', () => profundidadeModal() === 2);
+    document.querySelector('.modal-back.modal-foto').dispatchEvent(
+      new MouseEvent('mousedown', { bubbles: true })
+    );
+    await esperaPor('zoom fechado pelo fundo', () => profundidadeModal() === 1);
+    ok('clicar no fundo do zoom fecha so o zoom', profundidadeModal() === 1, 'camadas=' + profundidadeModal());
+    bate('depois do clique no fundo');
+
+    // Escape sobe uma camada; com uma so, fecha tudo.
+    ok('estado antes do Escape', profundidadeModal() === 1, 'camadas=' + profundidadeModal());
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await esperaPor('escape fechou', () => profundidadeModal() === 0);
+    ok('Escape fecha o modal que restava', profundidadeModal() === 0);
+    const depoisEscape = [...document.querySelectorAll('.modal-back')];
+    ok('nao sobrou nenhum fundo', depoisEscape.length === 0,
+      'fundos=' + depoisEscape.length + ' | ' +
+      depoisEscape.map((x) => (x.textContent || '').replace(/\s+/g, ' ').slice(0, 50)).join(' || '));
+    ok('pilha e DOM batem depois do Escape', bate('depois do Escape'));
+
+    // Escape com duas camadas sobe uma, sem derrubar as duas.
+    // Fecha tudo antes de reabrir: vehiclePhotos() empilha um modal novo, e
+    // chamar com a lista ainda aberta acumularia camadas de proposito.
+    while (profundidadeModal()) fecharModal();
+    ok('tela limpa antes de reabrir', bate('antes de reabrir'), 'pilha=' + profundidadeModal());
+    await vehiclePhotos(idVeic);
+    await esperaPor('lista de novo', () => profundidadeModal() === 1);
+    document.querySelector('.vehicle-image-preview img').click();
+    await esperaPor('zoom aberto', () => profundidadeModal() === 2);
+    ok('depois de ampliar de novo', bate('depois de ampliar de novo'),
+      `pilha=${profundidadeModal()} tela=${modaisNaTela()}`);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await esperaPor('subiu uma camada', () => profundidadeModal() === 1);
+    ok('Escape com zoom aberto sobe uma camada', profundidadeModal() === 1, 'camadas=' + profundidadeModal());
+    ok('subir uma camada limpa a tela', bate('depois de subir'),
+      `pilha=${profundidadeModal()} tela=${modaisNaTela()}`);
+    ok('antes do segundo Escape', bate('antes do 2o Escape'),
+      `pilha=${profundidadeModal()} dom=${document.querySelectorAll('.modal-back').length}`);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await esperaPor('fechou tudo', () => profundidadeModal() === 0);
+    ok('segundo Escape fecha a lista', profundidadeModal() === 0);
+    ok('pilha e DOM batem no fim', bate('final'));
+    const sobras = [...document.querySelectorAll('.modal-back')];
+    ok('nada sobrou na tela', sobras.length === 0,
+      sobras.map((x) => `classe="${x.className}"`).join(' | '));
+  } catch (e) { ok('zoom da foto sobre a lista', false, e.message); }
+
+  linhas.push('');
+  linhas.push('erros de runtime: ' + (erros.length ? erros.join(' | ') : 'nenhum'));
+  const falhas = linhas.filter((l) => l.startsWith('  FALHA')).length;
+  linhas.push(falhas ? `FALHAS: ${falhas}` : 'FIM');
+  escreva();
+})().catch((e) => {
+  document.getElementById('r').textContent += '\nERRO NO DRIVER: ' + (e && e.stack || e) + '\nFIM';
+});
+</script>
+</body>
+</html>

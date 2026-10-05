@@ -1,0 +1,23 @@
+# dependencias
+node_modules/
+
+# segredos: TURSO_DATABASE_URL, TURSO_AUTH_TOKEN, SESSION_SECRET
+# .env.local e criado pelo npm run dev:local quando falta SESSION_SECRET
+.env
+.env.local
+.env.*.local
+
+# bancos locais de desenvolvimento
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+.local.sqlite
+.tmp-check.sqlite
+
+# sistema e editores
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+.vscode/
+.idea/
