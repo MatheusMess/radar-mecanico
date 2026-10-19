@@ -39,17 +39,8 @@ const TIPOS = {
   '.txt': 'text/plain; charset=utf-8',
 };
 
-/** Carrega um handler de api/ sob demanda. */
-const handlers = new Map();
-async function handlerDe(recurso) {
-  if (!/^[a-z-]+$/.test(recurso)) return null;
-  if (!handlers.has(recurso)) {
-    const arquivo = join(raiz, 'api', `${recurso}.js`);
-    if (!existsSync(arquivo)) return null;
-    handlers.set(recurso, (await import(pathToFileURL(arquivo).href)).default);
-  }
-  return handlers.get(recurso);
-}
+/** O roteador unico: api/index.js ja sabe para onde mandar cada request. */
+const { default: roteador } = await import(pathToFileURL(join(raiz, 'api', 'index.js')).href);
 
 /** Corpo em JSON para endpoints de formulario e bytes para os de upload. */
 function lerCorpoBruto(req) {
@@ -105,13 +96,7 @@ const servidor = createServer(async (req, res) => {
   const caminho = decodeURIComponent(url.pathname);
 
   if (caminho.startsWith('/api/')) {
-    const recurso = caminho.slice('/api/'.length);
-    const handler = await handlerDe(recurso);
-    if (!handler) {
-      res.writeHead(404, { 'Content-Type': 'application/json; charset=utf-8' });
-      res.end(JSON.stringify({ error: `Endpoint inexistente: ${recurso}` }));
-      return;
-    }
+    const handler = roteador;
     let body;
     const tipo = req.headers['content-type'] || '';
     if (req.method !== 'GET' && req.method !== 'HEAD') {

@@ -95,7 +95,7 @@ for (const nome of [
   'requests', 'request-status', 'request-upload', 'request-images', 'quote',
   'workshops', 'workshop', 'workshop-photo', 'reviews', 'admin-users', 'image', 'especialidades',
 ]) {
-  H[nome] = (await import(pathToFileURL(join(raiz, 'api', `${nome}.js`)).href)).default;
+  H[nome] = (await import(pathToFileURL(join(raiz, 'handlers', `${nome}.js`)).href)).default;
 }
 
 // ------------------------------------------------------------------ testes

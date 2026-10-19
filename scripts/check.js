@@ -28,6 +28,7 @@ function listar(dir, filtro = '.js') {
 const arquivos = [
   ...listar(join(raiz, 'lib')),
   ...listar(join(raiz, 'api')),
+  ...listar(join(raiz, 'handlers')),
   ...listar(join(raiz, 'scripts')),
   join(raiz, 'app.js'),
 ];
@@ -72,6 +73,13 @@ for (const a of arquivos) {
   const src = readFileSync(a, 'utf8');
   const nomes = new Set();
   for (const m of src.matchAll(/export\s+(?:async\s+)?(?:function|class|const|let|var)\s+([A-Za-z_$][\w$]*)/g)) nomes.add(m[1]);
+  // export default function foo / export default { ... } / export default express()
+  for (const m of src.matchAll(/export\s+default\s+(?:async\s+)?(?:function\s+)?([A-Za-z_$][\w$]*)/g)) nomes.add(m[1]);
+  // export default rota(...): o default e o resultado de uma chamada, entao
+  // o importador pode chamar como quiser.
+  if (/export\s+default\s+[A-Za-z_$][\w$]*\s*\(/.test(src)) nomes.add('__default__');
+  // export default sem nome: o importador pode chamar como quiser
+  if (/export\s+default\b/.test(src) && !/export\s+default\s+(?:async\s+)?(?:function\s+)?[A-Za-z_$]/.test(src)) nomes.add('__default__');
   for (const m of src.matchAll(/export\s*\{([^}]*)\}/g)) {
     for (const item of m[1].split(',')) {
       const t = item.trim();
@@ -100,8 +108,10 @@ for (const a of arquivos) {
     const alvo = join(dirname(a), origem);
     if (!existsSync(alvo)) { erro(`${relative(raiz, a)}: módulo '${origem}' não existe`); continue; }
     const disponiveis = exportsDe.get(alvo) || new Set();
+    // Modulo com export default aceita qualquer nome de importacao.
+    const temDefault = disponiveis.has('__default__');
     for (const nome of nomes) {
-      if (!disponiveis.has(nome)) {
+      if (!disponiveis.has(nome) && !(temDefault && nome !== '__default__')) {
         erro(`${relative(raiz, a)}: importa '${nome}' de '${origem}', mas esse módulo não exporta esse nome`);
         console.log(`        disponíveis: ${[...disponiveis].join(', ')}`);
       }
