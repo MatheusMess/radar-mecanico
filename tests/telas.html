@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"><title>telas</title><link rel="stylesheet" href="/styles.css">
+<style>
+  #rel{position:fixed;left:0;top:0;z-index:99999;background:#000;color:#0f0;font:11px monospace;padding:8px;max-width:520px;max-height:60vh;overflow:auto;margin:0}
+</style>
+</head>
+<body>
+<div id="app"></div>
+<pre id="rel">rodando...</pre>
+<script src="/app.js"></script>
+<script>
+// Percorre as telas que tem imagem e mede o que de fato carregou.
+(async function () {
+  const linhas = [];
+  const erros = [];
+  window.addEventListener('error', (e) => erros.push(e.message));
+  const espera = (ms) => new Promise((r) => setTimeout(r, ms));
+  const esc = () => document.getElementById('rel').textContent = linhas.join('\n') + '\n';
+  const ok = (n, c, d = '') => { linhas.push((c ? '  OK    ' : '  FALHA ') + n + (d ? ' -> ' + d : '')); esc(); };
+
+  async function esperaPor(desc, cond, ms = 12000) {
+    const fim = Date.now() + ms;
+    while (Date.now() < fim) {
+      let p = false; try { p = cond(); } catch {}
+      if (p) return true;
+      await espera(120);
+    }
+    linhas.push('  AVISO tempo esgotado: ' + desc); esc(); return false;
+  }
+
+  // Mede as imagens visíveis: carregaram mesmo?
+  async function medirImgs(sel) {
+    const els = [...document.querySelectorAll(sel)];
+    const res = { total: els.length, ok: 0, quebrada: 0, urls: [] };
+    for (const el of els) {
+      const src = el.getAttribute('src') || el.style.backgroundImage || '';
+      res.urls.push(src.slice(0, 70));
+      const carregou = await new Promise((r) => {
+        const t = new Image();
+        t.onload = () => r({ ok: true, w: t.naturalWidth, h: t.naturalHeight });
+        t.onerror = () => r({ ok: false });
+        t.src = src.startsWith('url(') ? src.slice(5, -2).replace(/^'|'$/g, '') : src;
+      });
+      if (carregou.ok) res.ok++; else res.quebrada++;
+      if (carregou.ok && (carregou.w < 100)) res.pequena = (res.pequena || 0) + 1;
+    }
+    return res;
+  }
+
+  for (let i = 0; i < 60 && typeof api !== 'function'; i++) await espera(150);
+  await esperaPor('login', () => /Acesse sua conta/.test(document.querySelector('#app')?.textContent || ''));
+  ok('tela de login renderizou (sem imagem de fundo)', true);
+
+  // ---- CLIENTE: rede de oficinas (foto da fachada nos cards)
+  const login = await api('login', 'POST', { email: 'demo-cliente-diego@radar.local', password: 'Demo@2026' });
+  me = login.user;
+  window.view = 'workshops'; go('workshops');
+  await esperaPor('cards da rede', () => document.querySelectorAll('.shop-card').length > 0);
+  const cards = await medirImgs('.shop-card .shop-photo');
+  ok('cards da rede com foto da fachada', cards.total === 6 && cards.quebrada === 0,
+    `total=${cards.total} carregaram=${cards.ok} quebradas=${cards.quebrada}`);
+  linhas.push('        exemplo: ' + (cards.urls[0] || ''));
+  const etiquetas = document.querySelectorAll('.shop-card .tag').length;
+  ok('etiquetas de especialidade/garagem ao lado da foto', etiquetas > 0, `tags=${etiquetas}`);
+
+  // ---- Ficha publica da oficina (foto grande)
+  const idOf = (/\((\d+)\)/.exec(document.querySelector('.shop-card button')?.getAttribute('onclick') || '') || [])[1];
+  await workshopDetail(idOf);
+  await esperaPor('ficha', () => !!document.querySelector('.detail-photo'));
+  const det = await medirImgs('.detail-photo');
+  ok('foto grande na ficha da oficina', det.total === 1 && det.quebrada === 0,
+    `total=${det.total} quebradas=${det.quebrada}`);
+  closeModal(); await espera(250);
+
+  // ---- CLIENTE: garagem (miniatura no card) + ficha com todas as fotos
+  window.view = 'vehicles'; go('vehicles');
+  await esperaPor('cards da garagem', () => document.querySelector('[onclick*="vehicleModal("]'));
+  const th = await medirImgs('.vehicle-card img.vehicle-thumb');
+  ok('miniatura da foto no card do veiculo', th.total === 2 && th.quebrada === 0,
+    `total=${th.total} quebradas=${th.quebrada}`);
+  linhas.push('        miniatura: ' + (th.urls[0] || ''));
+
+  // "Adicionar veiculo" tambem usa vehicleModal(), entao so vale o onclick
+  // que traz um numero.
+  const cardVeic = [...document.querySelectorAll('[onclick*="vehicleModal("]')]
+    .find((el) => /\(\d+\)/.test(el.getAttribute('onclick') || ''));
+  const idV = (/\((\d+)\)/.exec(cardVeic?.getAttribute('onclick') || '') || [])[1];
+  await vehiclePhotos(idV);
+  await esperaPor('fotos do veiculo', () => document.querySelectorAll('.vehicle-image-preview img').length > 0);
+  const vp = await medirImgs('.vehicle-image-preview img');
+  ok('fotos do veiculo na ficha (galeria)', vp.total === 3 && vp.quebrada === 0,
+    `total=${vp.total} quebradas=${vp.quebrada}`);
+  ok('todas as fotos do veiculo saoclicaveis (zoom)', vp.total > 0 &&
+    [...document.querySelectorAll('.vehicle-image-preview img')].every((i) => /ampliarFoto/.test(i.getAttribute('onclick') || '')));
+
+  // ---- Zoom por cima da galeria
+  document.querySelector('.vehicle-image-preview img').click();
+  await esperaPor('zoom', () => document.querySelectorAll('.modal-back').length === 2);
+  ok('zoom abre por cima da galeria (2 camadas)', document.querySelectorAll('.modal-back').length === 2);
+  const zb = await medirImgs('.modal-foto .lightbox img');
+  ok('foto ampliada carrega', zb.total === 1 && zb.quebrada === 0, `quebradas=${zb.quebrada}`);
+  closeModal(); await espera(200);
+  closeModal(); await espera(200);
+
+  // ---- CLIENTE: pedido com fotos do problema
+  const rq = await api('requests');
+  const comFoto = (rq.requests || []).find((r) => r.image_count > 0);
+  window.view = 'requests'; go('requests');
+  await esperaPor('lista de pedidos', () => document.querySelector('#app')?.textContent?.length > 40);
+  await detail(comFoto.id);
+  await esperaPor('fotos do pedido', () => document.querySelectorAll('img[onclick*="ampliarFoto"]').length > 0);
+  const rp = await medirImgs('img[onclick*="ampliarFoto"]');
+  ok('fotos do problema anexadas pelo cliente', rp.total === comFoto.image_count && rp.quebrada === 0,
+    `esperadas=${comFoto.image_count} achadas=${rp.total} quebradas=${rp.quebrada}`);
+  linhas.push('        foto do problema: ' + (rp.urls[0] || ''));
+  closeModal(); await espera(250);
+
+  // ---- OFICINA: upload com previa antes de publicar
+  await api('login', 'POST', { email: 'demo-oficina-silva@radar.local', password: 'Demo@2026' });
+  me = (await api('session')).user;
+  window.view = 'profile'; go('profile');
+  await esperaPor('form de foto', () => !!document.querySelector('#fotoDrop'));
+  ok('foto atual da oficina aparece no perfil', !!document.querySelector('.foto-atual-thumb'));
+  const atual = await medirImgs('.foto-atual-thumb');
+  ok('miniatura da foto publicada carrega', atual.quebrada === 0, `quebradas=${atual.quebrada}`);
+
+  const grande = await criarPng(2400, 1200, [[220, 120, 40], [40, 90, 200]]);
+  await escolherArquivoFoto(document.querySelector('#fotoInput'), new File([grande], 'fachada.png', { type: 'image/png' }));
+  await esperaPor('previa', () => document.querySelector('#fotoEnviar')?.disabled === false);
+  const prev = await medirImgs('#fotoPreview img');
+  const info = (document.querySelector('.foto-preview-info')?.textContent || '').replace(/\s+/g, ' ');
+  ok('previa antes de publicar', prev.total === 1 && prev.quebrada === 0, 'quebradas=' + prev.quebrada);
+  ok('previa mostra o tamanho final reduzido', /1600×800 px/.test(info) && /KB/.test(info), info.slice(0, 80));
+  linhas.push('        previa: ' + info.slice(0, 70));
+
+  // ---- ADMIN: nada de imagem
+  await api('login', 'POST', { email: 'admin@radarmecanico.local', password: 'RadarAdm@2026' });
+  me = (await api('session')).user;
+  window.view = 'admin'; go('admin');
+  await esperaPor('admin', () => document.querySelector('#app')?.textContent?.length > 60);
+  while (modalAberto()) fecharModal();
+  await espera(200);
+  // O preview da foto vive em #fotoPreview e sobrevive a um render; zera para
+  // nao contar uma imagem de upload antigo como se fosse da tela de admin.
+  const previaBox = document.querySelector('#fotoPreview');
+  if (previaBox) previaBox.innerHTML = '';
+  const imgs = [...document.querySelectorAll('#app img')].map((i) => i.getAttribute('src') || '');
+  const soLogo = imgs.every((s) => /assets\/radar-mark/.test(s));
+  ok('tela de admin nao tem foto de conteudo (so o logo do cabecalho)',
+    soLogo && document.querySelectorAll('.shop-photo, .vehicle-thumb, .vehicle-image-preview img').length === 0,
+    imgs.map((s) => s.slice(0, 40)).join(' | '));
+
+  linhas.push('');
+  linhas.push('erros de runtime: ' + (erros.length ? erros.join(' | ') : 'nenhum'));
+  linhas.push('FIM');
+  esc();
+})().catch((e) => {
+  document.getElementById('rel').textContent += '\nERRO: ' + (e && e.stack || e) + '\nFIM';
+});
+
+async function criarPng(w, h, cores) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const ctx = c.getContext('2d');
+  const g = ctx.createLinearGradient(0, 0, w, h);
+  g.addColorStop(0, `rgb(${cores[0].join(',')})`);
+  g.addColorStop(1, `rgb(${cores[1].join(',')})`);
+  ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
+  ctx.fillStyle = 'rgba(255,255,255,.75)';
+  ctx.fillRect(w * .15, h * .25, w * .7, h * .5);
+  return await new Promise((res) => c.toBlob((b) => res(b), 'image/png'));
+}
+</script>
+</body>
+</html>
