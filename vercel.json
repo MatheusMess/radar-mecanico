@@ -5,6 +5,7 @@
   "outputDirectory": ".",
   "cleanUrls": true,
   "rewrites": [
+    { "source": "/api/:path*", "destination": "/api/index" },
     { "source": "/tests/:path*", "destination": "/index.html" }
   ],
   "functions": {
