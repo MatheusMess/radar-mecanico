@@ -20,10 +20,10 @@ export default rota(async (req) => {
     const reviews = await all(
       `SELECT r.id, r.rating, c.name client_name, r.comment, r.created_at
          FROM reviews r JOIN users c ON c.id = r.client_id
-        WHERE r.workshop_id = ? ORDER BY r.id DESC`,
+        WHERE r.workshop_id = $1 ORDER BY r.id DESC`,
       [wid]
     );
-    const s = await one('SELECT count(*) n, avg(rating) avg FROM reviews WHERE workshop_id = ?', [wid]);
+    const s = await one('SELECT count(*) n, avg(rating) avg FROM reviews WHERE workshop_id = $1', [wid]);
     // Mesmos nomes de /api/workshop, para o front nao ter dois contratos.
     return json({
       reviews: reviews.map((r) => ({
@@ -50,17 +50,17 @@ export default rota(async (req) => {
   const r = await one(
     `SELECT r.id, r.status, r.client_id, w.id workshop_id
        FROM requests r JOIN workshops w ON w.id = r.workshop_id
-      WHERE r.id = ? AND r.client_id = ?`,
+      WHERE r.id = $1 AND r.client_id = $2`,
     [requestId, u.id]
   );
   if (!r) return erro('Pedido não encontrado.', 404);
   if (String(r.status) !== 'completed') {
     return erro('Você só pode avaliar depois que o serviço for concluído pela oficina.', 422);
   }
-  const jaTem = await one('SELECT id FROM reviews WHERE request_id = ?', [requestId]);
+  const jaTem = await one('SELECT id FROM reviews WHERE request_id = $1', [requestId]);
   if (jaTem) return erro('Este pedido já foi avaliado.', 422);
 
-  await run('INSERT INTO reviews(workshop_id,client_id,request_id,rating,comment) VALUES(?,?,?,?,?)',
+  await run('INSERT INTO reviews(workshop_id,client_id,request_id,rating,comment) VALUES($1,$2,$3,$4,$5)',
     [r.workshop_id, u.id, requestId, nota, comentario]);
   await syncWorkshopRating(r.workshop_id);
 

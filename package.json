@@ -2,7 +2,7 @@
   "name": "radar-mecanico",
   "version": "1.0.0",
   "private": true,
-  "description": "Radar Mecânico - sistema de orçamentos entre clientes e oficinas. Frontend estatico + funcoes serverless + SQLite (Turso/libSQL).",
+  "description": "Radar Mecânico - sistema de orçamentos entre clientes e oficinas. Frontend estático + funções serverless + Postgres (Supabase).",
   "type": "module",
   "engines": {
     "node": ">=18"
@@ -11,6 +11,7 @@
     "dev": "vercel dev",
     "dev:local": "node scripts/devlocal.js",
     "build": "echo 'Projeto estatico: nao ha etapa de build.'",
+    "db:push": "node scripts/dbpush.js",
     "seed": "node scripts/seed.js",
     "test": "node scripts/testeapi.js",
     "test:browser": "node scripts/browsercheck.js http://127.0.0.1:8787/tests/browser.html #r FIM 90",
@@ -18,9 +19,10 @@
     "check": "node scripts/check.js"
   },
   "dependencies": {
-    "@libsql/client": "^0.14.0"
+    "pg": "^8.23.1"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.2.17",
     "vercel": "^62.4.0"
   }
 }

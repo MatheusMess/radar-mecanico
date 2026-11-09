@@ -17,7 +17,7 @@ export default rota(async (req) => {
             (SELECT avg(r.rating) FROM reviews r WHERE r.workshop_id = w.id) review_avg,
             (SELECT count(*) FROM requests rq WHERE rq.workshop_id = w.id) request_count
        FROM workshops w JOIN users u ON u.id = w.user_id
-      WHERE w.id = ?`,
+      WHERE w.id = $1`,
     [id]
   );
   if (!w) return erro('Oficina não encontrada.', 404);
@@ -25,7 +25,7 @@ export default rota(async (req) => {
   const reviews = await all(
     `SELECT r.id, r.rating, c.name client_name, r.comment, r.created_at
        FROM reviews r JOIN users c ON c.id = r.client_id
-      WHERE r.workshop_id = ? ORDER BY r.id DESC`,
+      WHERE r.workshop_id = $1 ORDER BY r.id DESC`,
     [id]
   );
 

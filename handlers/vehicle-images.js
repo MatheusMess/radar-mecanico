@@ -8,9 +8,9 @@ export default rota(async (req) => {
   const u = sessao.u;
 
   const vehicleId = Number(req.query?.vehicle_id ?? 0);
-  const dono = await one('SELECT id FROM vehicles WHERE id = ? AND client_id = ?', [vehicleId, u.id]);
+  const dono = await one('SELECT id FROM vehicles WHERE id = $1 AND client_id = $2', [vehicleId, u.id]);
   if (!dono) return erro('Veículo não encontrado.', 404);
 
-  const imgs = await all('SELECT id FROM vehicle_images WHERE vehicle_id = ? ORDER BY id', [vehicleId]);
+  const imgs = await all('SELECT id FROM vehicle_images WHERE vehicle_id = $1 ORDER BY id', [vehicleId]);
   return json({ images: imgs.map((i) => ({ id: Number(i.id) })) });
 });

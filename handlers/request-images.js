@@ -13,7 +13,7 @@ export default rota(async (req) => {
   const requestId = Number(req.query?.request_id ?? 0);
   const r = await one(
     `SELECT r.id, r.client_id, w.user_id workshop_user
-       FROM requests r JOIN workshops w ON w.id = r.workshop_id WHERE r.id = ?`,
+       FROM requests r JOIN workshops w ON w.id = r.workshop_id WHERE r.id = $1`,
     [requestId]
   );
   if (!r) return erro('Pedido não encontrado.', 404);
@@ -21,6 +21,6 @@ export default rota(async (req) => {
     return erro('Acesso restrito a este pedido.', 403);
   }
 
-  const imgs = await all('SELECT id FROM request_images WHERE request_id = ? ORDER BY id', [requestId]);
+  const imgs = await all('SELECT id FROM request_images WHERE request_id = $1 ORDER BY id', [requestId]);
   return json({ images: imgs.map((i) => ({ id: Number(i.id) })) });
 });

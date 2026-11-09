@@ -1,4 +1,5 @@
 import { erro } from '../lib/http.js';
+import { corpoMultipart, ehMultipart } from '../lib/multipart.js';
 
 /**
  * Roteador unico da API.
@@ -62,6 +63,13 @@ const ROTAS = {
 export const config = { api: { bodyParser: { sizeLimit: '5mb' } } };
 
 export default async function handler(req, res) {
+  // O upload da foto chega como multipart/form-data. A Vercel entrega o corpo
+  // cru (Buffer), e nao um objeto: quem separa os campos e o lib/multipart.js.
+  const tipo = req.headers?.['content-type'];
+  if (ehMultipart(tipo) && (Buffer.isBuffer(req.body) || req.body instanceof Uint8Array)) {
+    req.body = corpoMultipart(req.body, tipo) ?? {};
+  }
+
   const caminho = (req.url || '').split('?')[0];
   const partes = caminho.split('/').filter(Boolean);
   const endpoint = partes[1];

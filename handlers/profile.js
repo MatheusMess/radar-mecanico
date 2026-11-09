@@ -26,34 +26,34 @@ async function mostrar(req, u) {
   const out = { user: u, stats: {} };
 
   if (u.role === 'client') {
-    const v = await one('SELECT count(*) n FROM vehicles WHERE client_id = ?', [u.id]);
-    const r = await one('SELECT count(*) n FROM requests WHERE client_id = ?', [u.id]);
+    const v = await one('SELECT count(*) n FROM vehicles WHERE client_id = $1', [u.id]);
+    const r = await one('SELECT count(*) n FROM requests WHERE client_id = $1', [u.id]);
     out.stats = { vehicles: Number(v.n), requests: Number(r.n) };
     // Enderecos sao N:N (endereco_cliente): um cliente pode ter varios.
     out.enderecos = (await enderecosDoCliente(u.id)).map(serializarEndereco);
   } else if (u.role === 'workshop') {
-    const w = await one('SELECT * FROM workshops WHERE user_id = ?', [u.id]);
+    const w = await one('SELECT * FROM workshops WHERE user_id = $1', [u.id]);
     if (!w) return erro('Oficina não encontrada.', 404);
     out.workshop = serializarOficina(w);
     const r = await one(
-      'SELECT count(*) n FROM requests rq JOIN workshops ww ON ww.id = rq.workshop_id WHERE ww.user_id = ?',
+      'SELECT count(*) n FROM requests rq JOIN workshops ww ON ww.id = rq.workshop_id WHERE ww.user_id = $1',
       [u.id]
     );
     out.stats = { requests: Number(r.n) };
 
-    const s = await one('SELECT count(*) n, avg(rating) avg FROM reviews WHERE workshop_id = ?', [w.id]);
+    const s = await one('SELECT count(*) n, avg(rating) avg FROM reviews WHERE workshop_id = $1', [w.id]);
     out.review_count = Number(s.n);
     out.review_avg = s.avg === null ? null : Number(Number(s.avg).toFixed(2));
 
     const dist = [1, 2, 3, 4, 5].map(() => 0);
-    const linhas = await all('SELECT rating, count(*) total FROM reviews WHERE workshop_id = ? GROUP BY rating', [w.id]);
+    const linhas = await all('SELECT rating, count(*) total FROM reviews WHERE workshop_id = $1 GROUP BY rating', [w.id]);
     for (const l of linhas) dist[Number(l.rating) - 1] = Number(l.total);
     out.rating_distribution = { 1: dist[0], 2: dist[1], 3: dist[2], 4: dist[3], 5: dist[4] };
 
     out.reviews = await all(
       `SELECT r.rating, c.name client_name, r.comment, r.created_at
          FROM reviews r JOIN users c ON c.id = r.client_id
-        WHERE r.workshop_id = ?
+        WHERE r.workshop_id = $1
         ORDER BY r.id DESC LIMIT 50`,
       [w.id]
     );
@@ -62,7 +62,7 @@ async function mostrar(req, u) {
     // A foto atual e a revisao: a tela mostra o que esta no ar e usa a revisao
     // na URL para nao puxar a versao antiga do cache.
     out.foto = await one(
-      'SELECT (photo IS NOT NULL) has_photo, photo_rev FROM workshops WHERE id = ?',
+      'SELECT (photo IS NOT NULL) has_photo, photo_rev FROM workshops WHERE id = $1',
       [w.id]
     );
     out.foto = { has_photo: Number(out.foto.has_photo) === 1, photo_rev: Number(out.foto.photo_rev ?? 0) };
@@ -102,10 +102,10 @@ async function salvar(req, u) {
     const cpf = digitos(d.cpf);
     if (cpf.length !== 11) return erro('Informe um CPF válido com 11 dígitos.', 422);
     if (cpf !== String(u.cpf ?? '')) {
-      const outro = await one('SELECT id FROM users WHERE cpf = ? AND id <> ?', [cpf, u.id]);
+      const outro = await one('SELECT id FROM users WHERE cpf = $1 AND id <> $2', [cpf, u.id]);
       if (outro) return erro('Este CPF já pertence a outra conta.', 422);
     }
-    await run('UPDATE users SET name = ?, phone = ?, cpf = ? WHERE id = ?', [nome, telefone, cpf, u.id]);
+    await run('UPDATE users SET name = $1, phone = $2, cpf = $3 WHERE id = $4', [nome, telefone, cpf, u.id]);
     return json({ ok: true });
   }
 
@@ -118,16 +118,16 @@ async function salvar(req, u) {
     if (!endereco) return erro('Informe o endereço da oficina.', 422);
     if (!cidade) return erro('Informe a cidade da oficina.', 422);
     if (cnpj.length !== 14) return erro('Informe um CNPJ válido com 14 dígitos.', 422);
-    const w = await one('SELECT id FROM workshops WHERE user_id = ?', [u.id]);
+    const w = await one('SELECT id FROM workshops WHERE user_id = $1', [u.id]);
     if (!w) return erro('Oficina não encontrada.', 404);
-    const outro = await one('SELECT id FROM workshops WHERE cnpj = ? AND user_id <> ?', [cnpj, u.id]);
+    const outro = await one('SELECT id FROM workshops WHERE cnpj = $1 AND user_id <> $2', [cnpj, u.id]);
     if (outro) return erro('Este CNPJ já pertence a outra oficina.', 422);
 
     const horas = limpar(d.opening_hours);
-    await run('UPDATE users SET name = ?, phone = ? WHERE id = ?', [nome, telefone, u.id]);
+    await run('UPDATE users SET name = $1, phone = $2 WHERE id = $3', [nome, telefone, u.id]);
 await run(
-      `UPDATE workshops SET legal_name = ?, cnpj = ?, address = ?, city = ?, description = ?, services = ?, opening_hours = ?, garagem = ?
-        WHERE user_id = ?`,
+      `UPDATE workshops SET legal_name = $1, cnpj = $2, address = $3, city = $4, description = $5, services = $6, opening_hours = $7, garagem = $8
+        WHERE user_id = $9`,
       [razao, cnpj, endereco, cidade, limpar(d.description), limpar(d.services),
         horas || 'Seg–Fri, 08:00–18:00', d.garagem ? 1 : 0, u.id]
     );
@@ -135,7 +135,7 @@ await run(
   }
 
   // Administrador: pode corrigir nome e telefone, nao o acesso.
-  await run('UPDATE users SET name = ?, phone = ? WHERE id = ?', [nome, telefone, u.id]);
+  await run('UPDATE users SET name = $1, phone = $2 WHERE id = $3', [nome, telefone, u.id]);
   return json({ ok: true });
 }
 
@@ -146,7 +146,7 @@ async function salvarEndereco(d, u) {
   }
   const id = Number(d.id ?? 0);
   if (id > 0) {
-    const meu = await one('SELECT 1 x FROM endereco_cliente WHERE cliente_id = ? AND endereco_id = ?', [u.id, id]);
+    const meu = await one('SELECT 1 x FROM endereco_cliente WHERE cliente_id = $1 AND endereco_id = $2', [u.id, id]);
     if (!meu) return erro('Endereço não encontrado.', 404);
     await removeEnderecoDoCliente(u.id, id);
     return json({ ok: true, removed: id, enderecos: (await enderecosDoCliente(u.id)).map(serializarEndereco) });
@@ -165,7 +165,7 @@ async function salvarEndereco(d, u) {
 /** operation=especialidades: substitui o conjunto inteiro da oficina. */
 async function salvarEspecialidades(d, u) {
   if (u.role !== 'workshop') return erro('Somente Oficinas têm especialidades.', 403);
-  const w = await one('SELECT id FROM workshops WHERE user_id = ?', [u.id]);
+  const w = await one('SELECT id FROM workshops WHERE user_id = $1', [u.id]);
   if (!w) return erro('Oficina não encontrada.', 404);
 
   const bruto = Array.isArray(d.especialidades) ? d.especialidades : [];

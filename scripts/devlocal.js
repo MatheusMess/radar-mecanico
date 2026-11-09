@@ -4,13 +4,15 @@
  * A Vercel nao roda na sua maquina, mas o app e um conjunto de funcoes que
  * recebem (req, res). Este script monta um http.createServer que serve os
  * arquivos estaticos e despacha /api/<recurso> para o handler
- * corresponding, usando um SQLite local. Serve para desenvolver e para
+ * corresponding, usando o Postgres embutido (PGlite) ou o Supabase, se
+ * SUPABASE_DB_URL estiver definido. Serve para desenvolver e para
  * verificar o frontend sem deploy.
  *
  * uso: npm run dev:local   (http://127.0.0.1:8787)
  *
- * Nao exige configuracao: sem .env ele usa um SQLite em arquivo e gera um
- * SESSION_SECRET, que fica no .env.local para a sessao sobreviver ao reinicio.
+ * Nao exige configuracao: sem .env ele usa o Postgres embutido em .local-pg e
+ * gera um SESSION_SECRET, que fica no .env.local para a sessao sobreviver ao
+ * reinicio.
  */
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
@@ -41,6 +43,8 @@ const TIPOS = {
 
 /** O roteador unico: api/index.js ja sabe para onde mandar cada request. */
 const { default: roteador } = await import(pathToFileURL(join(raiz, 'api', 'index.js')).href);
+const { descricaoBanco } = await import(pathToFileURL(join(raiz, 'lib', 'db.js')).href);
+const { corpoMultipart } = await import(pathToFileURL(join(raiz, 'lib', 'multipart.js')).href);
 
 /** Corpo em JSON para endpoints de formulario e bytes para os de upload. */
 function lerCorpoBruto(req) {
@@ -62,34 +66,7 @@ function lerCorpoBruto(req) {
 }
 
 /** Interpreta multipart/form-data no formato que os handlers esperam. */
-function parseMultipart(buf, contentType) {
-  const m = /boundary=(?:"([^"]+)"|([^;]+))/i.exec(contentType || '');
-  if (!m) return null;
-  const boundary = `--${m[1] || m[2]}`;
-  const corpo = buf.toString('binary');
-  const saida = {};
-  for (const pedaco of corpo.split(boundary)) {
-    if (!pedaco || pedaco === '--' || pedaco === '--\r\n') continue;
-    const corte = pedaco.indexOf('\r\n\r\n');
-    if (corte === -1) continue;
-    const cabecalhos = pedaco.slice(0, corte);
-    const dados = pedaco.slice(corte + 4).replace(/\r\n$/, '');
-    const nome = /name="([^"]*)"/i.exec(cabecalhos)?.[1];
-    if (!nome) continue;
-    const filename = /filename="([^"]*)"/i.exec(cabecalhos)?.[1];
-    const tipo = /content-type:\s*([^\r\n]+)/i.exec(cabecalhos)?.[1]?.trim();
-    const valor = filename !== undefined
-      ? { data: Buffer.from(dados, 'binary'), filename, mimetype: tipo || 'application/octet-stream' }
-      : dados;
-    // Campos repetidos viram array, que e o caso de images[].
-    if (nome in saida) {
-      saida[nome] = [].concat(saida[nome], valor);
-    } else {
-      saida[nome] = valor;
-    }
-  }
-  return saida;
-}
+
 
 const servidor = createServer(async (req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
@@ -102,7 +79,7 @@ const servidor = createServer(async (req, res) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') {
       const bruto = await lerCorpoBruto(req);
       if (tipo.includes('multipart/form-data')) {
-        body = parseMultipart(bruto, tipo);
+        body = corpoMultipart(bruto, tipo);
       } else {
         try { body = JSON.parse(bruto.toString('utf8') || '{}'); } catch { body = bruto; }
       }
@@ -145,5 +122,5 @@ servidor.on('error', (e) => {
 
 servidor.listen(porta, '127.0.0.1', () => {
   console.log(`Radar Mecanico em http://127.0.0.1:${porta}`);
-  console.log(`Banco: ${process.env.TURSO_DATABASE_URL}`);
+  console.log(`Banco: ${descricaoBanco()}`);
 });

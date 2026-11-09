@@ -17,7 +17,7 @@ export default rota(async (req) => {
   const id = Number(req.query?.id ?? 0);
 
   if (tipo === 'workshop') {
-    const w = await one('SELECT photo, photo_mime FROM workshops WHERE id = ?', [id]);
+    const w = await one('SELECT photo, photo_mime FROM workshops WHERE id = $1', [id]);
     if (!w?.photo) return erro('Esta oficina ainda não tem foto.', 404);
     // Publica, mas so revalidando: trocar a foto tem que aparecer na hora.
     return responderBytes(w.photo, w.photo_mime || 'image/png', 'public, max-age=0, must-revalidate', req);
@@ -35,7 +35,7 @@ export default rota(async (req) => {
          FROM request_images ri
          JOIN requests r ON r.id = ri.request_id
          JOIN workshops w ON w.id = r.workshop_id
-        WHERE ri.id = ?`,
+        WHERE ri.id = $1`,
       [id]
     );
     if (!row) return erro('Imagem não encontrada.', 404);
@@ -48,7 +48,7 @@ export default rota(async (req) => {
   const v = await one(
     `SELECT vi.mime, vi.data FROM vehicle_images vi
        JOIN vehicles vv ON vv.id = vi.vehicle_id
-      WHERE vi.id = ? AND vv.client_id = ?`,
+      WHERE vi.id = $1 AND vv.client_id = $2`,
     [id, u.id]
   );
   if (!v) return erro('Veículo não encontrado.', 404);

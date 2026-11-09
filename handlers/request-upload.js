@@ -18,7 +18,7 @@ export default rota(async (req) => {
   if (sessao.u.role !== 'client') return erro('Apenas o Cliente pode enviar fotos do problema.', 403);
 
   const requestId = Number(req.body?.request_id ?? req.query?.request_id ?? 0);
-  const dono = await one('SELECT id FROM requests WHERE id = ? AND client_id = ?', [requestId, sessao.u.id]);
+  const dono = await one('SELECT id FROM requests WHERE id = $1 AND client_id = $2', [requestId, sessao.u.id]);
   if (!dono) return erro('Pedido não encontrado.', 404);
 
   const uploads = normalizarUploads(req.body);
@@ -34,7 +34,7 @@ export default rota(async (req) => {
     return erro(`Nenhuma imagem foi salva.${detalheRecusas(recusados) ? ' ' + detalheRecusas(recusados) : ''}`, 422);
   }
   await batch(validas.map((u) => ({
-    sql: 'INSERT INTO request_images(request_id,mime,data) VALUES(?,?,?)',
+    sql: 'INSERT INTO request_images(request_id,mime,data) VALUES($1,$2,$3)',
     args: [requestId, u.mime, u.bytes],
   })));
   return json({ ok: true, count: validas.length, rejected: recusados });

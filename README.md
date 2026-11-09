@@ -1,10 +1,10 @@
 ﻿# Radar Mecânico
 
-Sistema de orçamentos entre Clientes e Oficinas. **HTML, CSS, JavaScript e SQLite** — sem PHP,
+Sistema de orçamentos entre Clientes e Oficinas. **HTML, CSS, JavaScript e Postgres** — sem PHP,
 sem framework, sem etapa de build.
 
-Roda como site estático na Vercel com funções serverless em JavaScript e o banco SQLite no
-[Turso](https://turso.app) (libSQL, que é SQLite servido por HTTP).
+Roda como site estático na Vercel com funções serverless em JavaScript e o banco no
+[Supabase](https://supabase.com) (Postgres gerenciado).
 
 ## Como está organizado
 
@@ -13,7 +13,9 @@ index.html            página única (shell da aplicação)
 app.js                toda a interface: telas, formulários, roteamento por hash
 styles.css            design system, tema claro/escuro
 assets/               logo oficial (variante branca e preta)
-api/                  uma função serverless por endpoint
+api/
+  index.js             roteador único: /api/<recurso> -> handlers/<recurso>.js
+handlers/             um arquivo por endpoint (22)
   session.js            quem está logado
   login.js  logout.js  register.js
   profile.js            dados, endereços (cliente) e especialidades (oficina)
@@ -24,17 +26,21 @@ api/                  uma função serverless por endpoint
   workshops.js  workshop.js  workshop-photo.js
   reviews.js  especialidades.js
   admin-users.js
-  image.js             serve as fotos (BLOB) com checagem de acesso
+  image.js             serve as fotos (BYTEA) com checagem de acesso
 lib/
-  db.js               conexão, schema e validações de domínio
+  db.js               schema, consultas e validações de domínio
+  pg.js               conexão com o Postgres (Supabase ou PGlite local)
   auth.js             scrypt para senha, cookie de sessão assinado
   http.js             helpers de request/response e guardas
   upload.js           validação de imagens
+supabase/
+  schema.sql          schema completo, para colar no SQL Editor
 scripts/
   envlocal.js         lê .env/.env.local e inventa o que faltar no dev local
+  dbpush.js           aplica o schema no banco configurado
   seed.js             dados de demonstração
   check.js            sintaxe, imports e execução de todas as consultas
-  testeapi.js         166 asserções sobre os endpoints, com req/res falsos
+  testeapi.js         192 asserções sobre os endpoints, com req/res falsos
   testalogins.js      confere que toda conta do seed entra
   devlocal.js         servidor local: arquivos estáticos + /api sem a Vercel
   browsercheck.js     lê o resultado de uma página no navegador (Edge/Chrome)
@@ -45,8 +51,8 @@ tests/
 
 ## Tabelas
 
-Doze no total. As quatro com `*_images` são as fotos, guardadas como BLOB
-porque uma função serverless da Vercel não tem disco gravável.
+Doze no total. As quatro com `*_images` são as fotos, guardadas como BYTEA no
+Postgres porque uma função serverless da Vercel não tem disco gravável.
 
 | Tabela | O que guarda |
 | --- | --- |
@@ -88,30 +94,37 @@ diferença é de modelo, não de nome:
 ### Migração
 
 Tabelas novas são criadas sozinhas (`CREATE TABLE IF NOT EXISTS`). Colunas novas
-precisam de `ALTER TABLE`, e `CREATE TABLE IF NOT EXISTS` não acrescenta coluna
-em tabela que já existe: por isso `COLUNAS_NOVAS` em `lib/db.js`, conferida com
-`PRAGMA table_info` antes de cada `ADD COLUMN`. Rodar `iniciar()` duas vezes não
-muda nada — o `npm run check` verifica isso.
+entram por `ALTER TABLE ... ADD COLUMN IF NOT EXISTS`, listadas em
+`COLUNAS_NOVAS` no `lib/db.js`. Rodar `iniciar()` duas vezes não muda nada — o
+`npm run check` verifica isso. O mesmo schema está em `supabase/schema.sql`
+para quem preferir rodar uma vez no SQL Editor do Supabase.
 
 ## Publicar
 
-### 1. Banco no Turso
+### 1. Banco no Supabase
 
-1. Crie uma conta em [turso.app](https://turso.app).
-2. Crie um banco (`turso db create radar`).
-3. Pegue as credenciais em **Connect**: *Database URL* e *Auth Token*.
+1. Crie um projeto em [supabase.com](https://supabase.com) (o plano grátis serve).
+2. Abra **Project Settings → Database → Connection string** e copie a URI.
+   - Para a Vercel, prefira a **Session pooler** (porta 5432) ou a
+     **Transaction pooler** (porta 6543): a conexão direta só resolve IPv6.
+   - A URI já vem com a senha do banco. Se tiver perdido, dá para redefinir em
+     **Database → Reset database password**.
+3. Opcional: cole `supabase/schema.sql` no **SQL Editor** e rode. Se não rodar
+   nada, a primeira requisição da API cria tudo sozinha.
 
 ### 2. Na Vercel
 
 1. Importe o repositório.
 2. Em **Settings → Environment Variables**, cadastre:
-   - `TURSO_DATABASE_URL` — a URL do passo 1
-   - `TURSO_AUTH_TOKEN` — o token do passo 1
+   - `SUPABASE_DB_URL` — a URI do passo 1
    - `SESSION_SECRET` — um valor aleatório longo. Gere com:
      ```
      node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
      ```
 3. Deploy. Não há build command: o projeto é estático.
+
+Se você usar a integração Supabase da Vercel, ela injeta `POSTGRES_URL`
+sozinha, e o app aceita essa variável no lugar de `SUPABASE_DB_URL`.
 
 O schema é criado sozinho na primeira requisição, junto com o administrador inicial.
 
@@ -134,7 +147,8 @@ npm run dev          # vercel dev, em http://localhost:3000
 ```
 
 O segundo não precisa da Vercel: `scripts/devlocal.js` serve os arquivos e
-monta o `/api` chamando os mesmos handlers, com um SQLite em arquivo.
+monta o `/api` chamando os mesmos handlers, com um Postgres embutido (PGlite)
+ou o Supabase, se houver URL configurada.
 
 ```bash
 npm install
@@ -142,17 +156,15 @@ npm run seed          # opcional: dados de demonstração
 npm run dev:local     # http://127.0.0.1:8787
 ```
 
-**Não é preciso configurar nada.** Sem um `.env`, o servidor usa
-`file:./.local.sqlite` e gera um `SESSION_SECRET` aleatório, que fica gravado
+**Não é preciso configurar nada.** Sem um `.env`, o servidor usa um Postgres
+embutido em `.local-pg` e gera um `SESSION_SECRET` aleatório, que fica gravado
 no `.env.local` (já ignorado pelo git) para que a sessão não caia a cada
-reinício. O `.env.local` é só para desenvolvimento local — apague antes de
-apontar para o Turso.
+reinício. O `.local-pg` é só desenvolvimento — o banco de verdade é o Supabase.
 
-Para apontar para o Turso de verdade, crie um `.env`:
+Para apontar para o Supabase também no seu computador, crie um `.env`:
 
 ```
-TURSO_DATABASE_URL=libsql://seu-banco-xxxx.turso.io
-TURSO_AUTH_TOKEN=eyJhbGciOi...
+SUPABASE_DB_URL=postgresql://postgres.SEU_PROJETO:SENHA@aws-0-REGIAO.pooler.supabase.com:6543/postgres
 SESSION_SECRET=<valor aleatorio longo>
 ```
 
@@ -220,7 +232,7 @@ npm run test:browser # as telas do app contra a API (precisa do dev:local no ar)
 
 `npm run check` não sobe servidor nem usa rede: valida a sintaxe de todos os `.js`, confere se
 cada nome importado existe no módulo de origem e executa o schema e todas as consultas contra um
-SQLite temporário.
+Postgres embutido temporário (PGlite, o mesmo dialeto do Supabase).
 
 `npm test` sobe os handlers em Node com `req`/`res` falsos e um banco próprio. Cobre cadastro,
 login, CSRF, garagem, fotos, pedido, orçamento, status, avaliação, administração e as fronteiras
@@ -234,10 +246,11 @@ resultado sai no próprio console.
 
 ## Decisões que valem explicar
 
-**As imagens são BLOB no banco, não arquivos.** Uma função serverless da Vercel não tem disco
-gravável, então a foto vai para o SQLite e é servida por `/api/image`. O preço é o limite de
+**As imagens são BYTEA no banco, não arquivos.** Uma função serverless da Vercel não tem disco
+gravável, então a foto vai para o Postgres e é servida por `/api/image`. O preço é o limite de
 tamanho: 2 MB por imagem e 3 MB por envio (o corpo da requisição é limitado a ~4,5 MB pela
-plataforma).
+plataforma). Se um dia as fotos crescerem, o caminho natural é trocar o BYTEA pelo Supabase
+Storage e guardar só o caminho da imagem na tabela.
 
 **A foto da fachada é redimensionada no navegador antes de subir.** Uma foto de celular tem
 4000 px e 4 MB; ia para o banco inteira e o card baixava tudo isso para exibir 300 px. O

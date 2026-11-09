@@ -36,7 +36,7 @@ export default rota(async (req) => {
 
   const r = await one(
     `SELECT r.id, r.status, r.client_id, w.user_id workshop_user
-       FROM requests r JOIN workshops w ON w.id = r.workshop_id WHERE r.id = ?`,
+       FROM requests r JOIN workshops w ON w.id = r.workshop_id WHERE r.id = $1`,
     [id]
   );
   if (!r) return erro('Pedido não encontrado.', 404);
@@ -53,6 +53,6 @@ export default rota(async (req) => {
     return erro(`${quem} mudar de "${requestStatusLabel(atual)}" para "${requestStatusLabel(novo)}".`, 422);
   }
 
-  await run('UPDATE requests SET status = ? WHERE id = ?', [novo, id]);
+  await run('UPDATE requests SET status = $1 WHERE id = $2', [novo, id]);
   return json({ ok: true, status: novo, label: requestStatusLabel(novo) });
 });

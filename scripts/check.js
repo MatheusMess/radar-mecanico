@@ -4,11 +4,12 @@
  *   npm run check
  *
  * Faz tres coisas:
- *   1. sintaxe de todos os .js (import dinamico com os imports removidos)
+ *   1. sintaxe de todos os .js (node --check, sem executar)
  *   2. existe um export com o nome de cada item importado
- *   3. o schema cria e as consultas rodam contra um SQLite local
+ *   3. o schema cria e as consultas rodam contra um Postgres embutido local
  */
 import { readdirSync, readFileSync, statSync, existsSync, rmSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { join, relative, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { tmpdir } from 'node:os';
@@ -37,33 +38,18 @@ const arquivos = [
 console.log('1. Sintaxe');
 for (const caminho of arquivos) {
   const rel = relative(raiz, caminho).replace(/\\/g, '/');
-  const src = readFileSync(caminho, 'utf8');
-  const reescrito = src
-    .replace(/^\s*import\s+[\s\S]*?from\s+['"][^'"]+['"];?\s*$/gm, '')
-    .replace(/^\s*import\s+['"][^'"]+['"];?\s*$/gm, '')
-    .replace(/\bexport\s+default\s+/g, 'const __default = ')
-    .replace(/\bexport\s+(async\s+function|function|const|let|var|class)\b/g, '$1');
-  try {
-    // Data URL evita criar arquivo no disco; o import executa o modulo.
-    const url = `data:text/javascript;base64,${Buffer.from(reescrito, 'utf8').toString('base64')}`;
-    // Os imports foram removidos, entao o modulo roda e pode imprimir erro
-    // proprio (o seed, por exemplo). Isso nao interessa aqui.
-    const log = console.log;
-    const err = console.error;
-    console.log = console.error = () => {};
-    try {
-      await import(url);
-    } finally {
-      console.log = log;
-      console.error = err;
-    }
+  // `node --check` analisa o arquivo como ESM (package.json tem type: module)
+  // sem executar nada. Importar via data URL rodava o topo dos scripts, e o
+  // topo de scripts/browsercheck.js abre um socket com o navegador headless,
+  // que deixava o processo pendurado depois do "Tudo certo".
+  const r = spawnSync(process.execPath, ['--check', caminho], { encoding: 'utf8' });
+  if (r.status === 0) {
     console.log(`  OK    ${rel}`);
-  } catch (e) {
-    // Sem imports resolvidos, ReferenceError em runtime e esperado; o que
-    // interessa e SyntaxError.
-    if (e instanceof SyntaxError) erro(`${rel}: ${e.message}`);
-    else console.log(`  OK    ${rel}  (sintaxe ok)`);
+    continue;
   }
+  const saida = `${r.stderr || ''}${r.stdout || ''}`.trim().split(/\r?\n/);
+  const linha = saida.find((l) => /SyntaxError/.test(l)) || saida[saida.length - 1] || 'erro de sintaxe';
+  erro(`${rel}: ${linha.replace(/^.*?SyntaxError:\s*/, '')}`);
 }
 
 // ---------------------------------------------------------------- 2. imports
@@ -121,28 +107,28 @@ for (const a of arquivos) {
 function existe(p) { try { statSync(p); return true; } catch { return false; } }
 
 // ---------------------------------------------------------------- 3. schema
-console.log('\n3. Schema e consultas (SQLite temporário via lib/db.js de verdade)');
+console.log('\n3. Schema e consultas (Postgres embutido via lib/db.js de verdade)');
 try {
-  const arq = join(tmpdir(), `radarcheck-${process.pid}.sqlite`);
-  rmSync(arq, { force: true });
+  const dir = join(tmpdir(), `radarcheck-${process.pid}`);
+  rmSync(dir, { recursive: true, force: true });
+  for (const v of ['SUPABASE_DB_URL', 'POSTGRES_URL', 'DATABASE_URL']) delete process.env[v];
+  process.env.PGLITE_DIR = dir;
   // Chamar iniciar() em vez de remontar o schema por regex: e o caminho real,
   // incluindo as colunas que so entram por ALTER TABLE.
-  process.env.TURSO_DATABASE_URL = `file:${arq}`;
-  const { iniciar, db } = await import(pathToFileURL(join(raiz, 'lib', 'db.js')).href);
+  const { iniciar, all, fechar } = await import(pathToFileURL(join(raiz, 'lib', 'db.js')).href);
   await iniciar();
-  const c = db();
 
-  const tabelas = await c.execute(
-    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+  const tabelas = await all(
+    "SELECT table_name AS name FROM information_schema.tables WHERE table_schema = 'public' ORDER BY table_name"
   );
-  const criadas = tabelas.rows.map((r) => r.name);
+  const criadas = tabelas.map((r) => r.name);
   console.log(`  OK    ${criadas.length} tabelas: ${criadas.join(', ')}`);
 
   // Rodar duas vezes tem de ser seguro: e o que acontece a cada requisicao.
   await iniciar();
-  const outra = (await c.execute(
-    "SELECT count(*) n FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
-  )).rows[0].n;
+  const outra = (await all(
+    "SELECT count(*) n FROM information_schema.tables WHERE table_schema = 'public'"
+  ))[0].n;
   if (Number(outra) !== criadas.length) {
     erro(`iniciar() nao e idempotente: ${criadas.length} tabelas e depois ${outra}`);
   } else {
@@ -153,22 +139,25 @@ try {
   for (const [tabela, coluna] of [
     ['vehicles', 'chassi'], ['workshops', 'garagem'], ['workshops', 'photo_rev'], ['requests', 'detalhes'],
   ]) {
-    const info = await c.execute(`PRAGMA table_info(${tabela})`);
-    if (!info.rows.some((r) => r.name === coluna)) {
+    const info = await all(
+      'SELECT column_name FROM information_schema.columns WHERE table_name = $1',
+      [tabela]
+    );
+    if (!info.some((r) => r.column_name === coluna)) {
       erro(`a migracao nao criou ${tabela}.${coluna}`);
     }
   }
   // Uma linha por tabela, para as consultas terem com o que trabalhar.
-  await c.execute("INSERT INTO users(role,name,email,password_hash,cpf,phone) VALUES('client','Cli','c@t.local','x','11144477735','(11) 1')");
-  await c.execute("INSERT INTO users(role,name,email,password_hash,phone) VALUES('workshop','Ofi','o@t.local','x','(11) 2')");
-  await c.execute("INSERT INTO users(role,name,email,password_hash,phone) VALUES('admin','Adm','a@t.local','x','(11) 3')");
-  await c.execute("INSERT INTO workshops(user_id,legal_name,cnpj,address,city) VALUES(2,'Ofi LTDA','11222333000181','Rua A, 1','SP')");
-  await c.execute("INSERT INTO vehicles(client_id,make_model,plate,year,brand,model,color,fuel,mileage) VALUES(1,'Honda Civic','ABC1D23',2020,'Honda','Civic','Prata','Flex',45000)");
-  await c.execute("INSERT INTO vehicle_images(vehicle_id,mime,data) VALUES(1,'image/png',x'89504e47')");
-  await c.execute("INSERT INTO requests(client_id,workshop_id,vehicle_id,service_type,description) VALUES(1,1,1,'Freios','Chiado')");
-  await c.execute("INSERT INTO request_images(request_id,mime,data) VALUES(1,'image/png',x'89504e47')");
-  await c.execute("INSERT INTO quotes(request_id,message,amount_min,amount_max) VALUES(1,'Orc',100,200)");
-  await c.execute("INSERT INTO reviews(workshop_id,client_id,request_id,rating,comment) VALUES(1,1,1,5,'Otimo')");
+  await all("INSERT INTO users(role,name,email,password_hash,cpf,phone) VALUES('client','Cli','c@t.local','x','11144477735','(11) 1')");
+  await all("INSERT INTO users(role,name,email,password_hash,phone) VALUES('workshop','Ofi','o@t.local','x','(11) 2')");
+  await all("INSERT INTO users(role,name,email,password_hash,phone) VALUES('admin','Adm','a@t.local','x','(11) 3')");
+  await all("INSERT INTO workshops(user_id,legal_name,cnpj,address,city) VALUES(2,'Ofi LTDA','11222333000181','Rua A, 1','SP')");
+  await all("INSERT INTO vehicles(client_id,make_model,plate,year,brand,model,color,fuel,mileage) VALUES(1,'Honda Civic','ABC1D23',2020,'Honda','Civic','Prata','Flex',45000)");
+  await all('INSERT INTO vehicle_images(vehicle_id,mime,data) VALUES(1,$1,$2)', ['image/png', Buffer.from([0x89, 0x50, 0x4e, 0x47])]);
+  await all("INSERT INTO requests(client_id,workshop_id,vehicle_id,service_type,description) VALUES(1,1,1,'Freios','Chiado')");
+  await all('INSERT INTO request_images(request_id,mime,data) VALUES(1,$1,$2)', ['image/png', Buffer.from([0x89, 0x50, 0x4e, 0x47])]);
+  await all("INSERT INTO quotes(request_id,message,amount_min,amount_max) VALUES(1,'Orc',100,200)");
+  await all("INSERT INTO reviews(workshop_id,client_id,request_id,rating,comment) VALUES(1,1,1,5,'Otimo')");
 
   const fragDe = (src) => {
     const mapa = {};
@@ -186,9 +175,9 @@ try {
       if (/\b(?:FROM|JOIN|UPDATE|INTO)\s+\$\{/i.test(original)) continue;
 
       let sql = original.replace(/\$\{filtro\}/, '');
-      // Listas de placeholders (const l = ids.map(() => '?').join(','))
-      // precisam virar "?, ?, ?" para o SQL fechar.
-      sql = sql.split('${l}').join('?, ?, ?');
+      // Listas de placeholders (const l = ids.map((_, i) => `$${i + 1}`).join(','))
+      // precisam virar "$1, $2, $3" para o SQL fechar.
+      sql = sql.split('${l}').join('$1, $2, $3');
       for (const [nome, valor] of Object.entries(frag)) sql = sql.split('${' + nome + '}').join(valor);
       sql = sql.replace(/\$\{[^}]*\}/g, 'id').trim();
       // Precisa ter uma tabela de destino: fragmento de coluna (const CAMPOS)
@@ -201,28 +190,25 @@ try {
 
       // supplying null for every placeholder: execucao sem argumentos deixa o
       // driver reclamar de forma enganosa.
-      const n = (sql.match(/\?/g) || []).length;
+      const indices = [...sql.matchAll(/\$(\d+)/g)].map((m) => Number(m[1]));
+      const n = indices.length ? Math.max(...indices) : 0;
       try {
-        await c.execute({ sql, args: new Array(n).fill(null) });
+        await all(sql, new Array(n).fill(null));
       } catch (e) {
         const msg = String(e.message);
         // O SQL compilou: um erro de valor invalido no teste (NULL em coluna NOT
         // NULL, unicidade, FK) prova que a sintaxe esta correta.
-        if (/(NOT NULL|UNIQUE|FOREIGN KEY|CHECK) constraint/i.test(msg)) continue;
-        const m2 = /expected (\d+)/.exec(msg);
-        if (m2 && Number(m2[1]) !== n) {
-          erro(`${relative(raiz, a)}: a consulta usa ${n} placeholder(s) mas o teste passou ${n}`);
-          continue;
-        }
+        if (/violates not-null constraint|null value in column|violates foreign key constraint|violates check constraint|duplicate key value|could not determine data type/i.test(msg)) continue;
         erro(`${relative(raiz, a)}: ${msg}\n        ${sql.replace(/\s+/g, ' ').slice(0, 130)}`);
       }
     }
   }
   console.log(`  OK    ${testadas} consultas executadas`);
-  c.close();
+  await fechar();
+  rmSync(dir, { recursive: true, force: true });
 } catch (e) {
   aviso(`não deu para testar o schema: ${e.message}`);
-  aviso(' rode `npm install` para baixar o @libsql/client');
+  aviso(' rode `npm install` para baixar o @electric-sql/pglite');
 }
 
 console.log(`\n${falhas ? `${falhas} falha(s)` : 'Tudo certo.'}`);

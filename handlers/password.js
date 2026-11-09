@@ -18,10 +18,10 @@ export default rota(async (req) => {
   if (nova.length < 8) return erro('A nova senha deve ter ao menos 8 caracteres.', 422);
   if (nova === atual) return erro('A nova senha deve ser diferente da atual.', 422);
 
-  const guardado = await one('SELECT password_hash FROM users WHERE id = ?', [u.id]);
+  const guardado = await one('SELECT password_hash FROM users WHERE id = $1', [u.id]);
   if (!guardado || !verificarSenha(atual, guardado.password_hash)) {
     return erro('Senha atual incorreta.', 422);
   }
-  await run('UPDATE users SET password_hash = ? WHERE id = ?', [await hashSenha(nova), u.id]);
+  await run('UPDATE users SET password_hash = $1 WHERE id = $2', [await hashSenha(nova), u.id]);
   return json({ ok: true });
 });

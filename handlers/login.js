@@ -11,7 +11,7 @@ export default rota(async (req) => {
   const senha = String(d.password ?? '');
   if (!email || !senha) return erro('Informe e-mail e senha.', 422);
 
-  const u = await one('SELECT * FROM users WHERE email = ?', [email]);
+  const u = await one('SELECT * FROM users WHERE email = $1', [email]);
   if (!u || !verificarSenha(senha, u.password_hash)) {
     return erro('E-mail ou senha inválidos.', 422);
   }

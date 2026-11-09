@@ -26,7 +26,7 @@ export default rota(async (req) => {
               (SELECT count(*) FROM vehicle_images i WHERE i.vehicle_id = v.id) image_count,
               -- O card da garagem usa a primeira foto como miniatura.
               (SELECT i.id FROM vehicle_images i WHERE i.vehicle_id = v.id ORDER BY i.id LIMIT 1) image_id
-         FROM vehicles v WHERE v.client_id = ? ORDER BY v.id DESC`,
+         FROM vehicles v WHERE v.client_id = $1 ORDER BY v.id DESC`,
       [u.id]
     );
     return json({ vehicles: veiculos.map(serializar) });
@@ -38,7 +38,7 @@ export default rota(async (req) => {
   const d = await lerCorpo(req);
   const id = Number(d.id ?? 0);
   if (id > 0) {
-    const dono = await one('SELECT id FROM vehicles WHERE id = ? AND client_id = ?', [id, u.id]);
+    const dono = await one('SELECT id FROM vehicles WHERE id = $1 AND client_id = $2', [id, u.id]);
     if (!dono) return erro('Veículo não encontrado.', 404);
   }
 
@@ -65,7 +65,7 @@ export default rota(async (req) => {
   if (!COMBUSTIVEIS.includes(combustivel)) return erro('Selecione o combustível do veículo.', 422);
   if (kmTxt === '' || !/^\d+$/.test(kmTxt)) return erro('Informe a quilometragem atual em km.', 422);
 
-  const dup = await one('SELECT id FROM vehicles WHERE plate = ? AND client_id = ? AND id <> ?', [placa, u.id, id]);
+  const dup = await one('SELECT id FROM vehicles WHERE plate = $1 AND client_id = $2 AND id <> $3', [placa, u.id, id]);
   if (dup) return erro('Você já cadastrou um veículo com esta placa.', 422);
 
   // Chassi e opcional, mas se vier precisa ser um chassi de verdade.
@@ -74,7 +74,7 @@ export default rota(async (req) => {
     return erro('Chassi inválido. São 17 caracteres, sem as letras I, O e Q.', 422);
   }
   const outroChassi = chassi
-    ? await one('SELECT id FROM vehicles WHERE chassi = ? AND client_id = ? AND id <> ?', [chassi, u.id, id])
+    ? await one('SELECT id FROM vehicles WHERE chassi = $1 AND client_id = $2 AND id <> $3', [chassi, u.id, id])
     : null;
   if (outroChassi) return erro('Você já cadastrou um veículo com este chassi.', 422);
 
@@ -84,8 +84,8 @@ export default rota(async (req) => {
 
   if (id > 0) {
     await run(
-      `UPDATE vehicles SET make_model = ?, plate = ?, year = ?, brand = ?, model = ?, color = ?, fuel = ?, mileage = ?, notes = ?, chassi = ?
-        WHERE id = ? AND client_id = ?`,
+      `UPDATE vehicles SET make_model = $1, plate = $2, year = $3, brand = $4, model = $5, color = $6, fuel = $7, mileage = $8, notes = $9, chassi = $10
+        WHERE id = $11 AND client_id = $12`,
       [makeModel, placa, ano, marca, modelo, cor, combustivel, km, notas, chassi, id, u.id]
     );
     return json({ ok: true, vehicle_id: id });
@@ -93,7 +93,7 @@ export default rota(async (req) => {
 
   const { lastInsertId } = await run(
     `INSERT INTO vehicles(client_id,make_model,plate,year,brand,model,color,fuel,mileage,notes,chassi)
-     VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
     [u.id, makeModel, placa, ano, marca, modelo, cor, combustivel, km, notas, chassi]
   );
   return json({ ok: true, vehicle_id: Number(lastInsertId) });

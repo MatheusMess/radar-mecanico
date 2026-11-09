@@ -16,7 +16,7 @@ export default rota(async (req) => {
   const r = await one(
     `SELECT r.id, r.status FROM requests r
        JOIN workshops w ON w.id = r.workshop_id
-      WHERE r.id = ? AND w.user_id = ?`,
+      WHERE r.id = $1 AND w.user_id = $2`,
     [id, sessao.u.id]
   );
   if (!r) return erro('Pedido não encontrado.', 404);
@@ -32,19 +32,19 @@ export default rota(async (req) => {
   const mensagem = limpar(d.message);
   if (!mensagem) return erro('Escreva a mensagem para o cliente.', 422);
 
-  const jaExiste = await one('SELECT id FROM quotes WHERE request_id = ?', [id]);
+  const jaExiste = await one('SELECT id FROM quotes WHERE request_id = $1', [id]);
   if (jaExiste) {
     await run(
-      'UPDATE quotes SET message = ?, amount_min = ?, amount_max = ? WHERE request_id = ?',
+      'UPDATE quotes SET message = $1, amount_min = $2, amount_max = $3 WHERE request_id = $4',
       [mensagem, min, max, id]
     );
   } else {
-    await run('INSERT INTO quotes(request_id,message,amount_min,amount_max) VALUES(?,?,?,?)', [id, mensagem, min, max]);
+    await run('INSERT INTO quotes(request_id,message,amount_min,amount_max) VALUES($1,$2,$3,$4)', [id, mensagem, min, max]);
   }
   // Responder move "aberto" para "respondido", mas não regride um serviço que
   // a oficina já aceitou (senão o botão voltaria a dizer "Aceitar").
   if (String(r.status) === 'open') {
-    await run("UPDATE requests SET status = 'responded' WHERE id = ?", [id]);
+    await run("UPDATE requests SET status = 'responded' WHERE id = $1", [id]);
   }
   return json({ ok: true, status: String(r.status), label: requestStatusLabel(String(r.status)) });
 });

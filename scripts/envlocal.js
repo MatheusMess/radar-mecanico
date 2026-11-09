@@ -33,17 +33,19 @@ function lerEnv(raiz) {
 
 /**
  * @param {string} raiz  pasta do projeto
- * @param {{padrao?: boolean}} opcoes  padrao=false nao inventa URL de banco
+ * @param {{padrao?: boolean}} opcoes  padrao=false nao avisa sobre banco embutido
  * @returns {{avisos: string[]}}
  */
 export function prepararEnvLocal(raiz, { padrao = true } = {}) {
   const avisos = [];
   lerEnv(raiz);
 
-  // Em desenvolvimento o SQLite pode ser um arquivo: nada externo para configurar.
-  if (padrao && !process.env.TURSO_DATABASE_URL) {
-    process.env.TURSO_DATABASE_URL = 'file:./.local.sqlite';
-    avisos.push('TURSO_DATABASE_URL nao estava definido; usando file:./.local.sqlite');
+  // Sem URL de Postgres o projeto usa o PGlite (Postgres embutido) em .local-pg.
+  // Nada externo para configurar.
+  if (padrao && !temBanco()) {
+    avisos.push(
+      `Nenhum banco na nuvem configurado; usando o Postgres embutido em ${process.env.PGLITE_DIR || '.local-pg'}`
+    );
   }
 
   if (!process.env.SESSION_SECRET || process.env.SESSION_SECRET.length < 16) {
@@ -54,7 +56,7 @@ export function prepararEnvLocal(raiz, { padrao = true } = {}) {
       appendFileSync(
         destino,
         `# Gerado por npm run dev:local em ${new Date().toISOString()}.\n` +
-        `# Apague este arquivo se for apontar para o Turso de verdade.\n` +
+        `# Apague este arquivo se for apontar para o Supabase de verdade.\n` +
         `SESSION_SECRET=${segredo}\n`
       );
       avisos.push(`SESSION_SECRET gerado e salvo em ${ARQUIVO_ENV_LOCAL}`);
@@ -64,4 +66,8 @@ export function prepararEnvLocal(raiz, { padrao = true } = {}) {
   }
 
   return { avisos };
+}
+
+function temBanco() {
+  return Boolean(process.env.SUPABASE_DB_URL || process.env.POSTGRES_URL || process.env.DATABASE_URL);
 }

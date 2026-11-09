@@ -1,22 +1,24 @@
 /**
  * Teste de ponta a ponta da API.
  *
- * Sobe os handlers em Node com um req/res falso e um SQLite temporario, sem
- * subir a Vercel. Cobre o caminho que o usuario percorre de verdade: cadastro,
- * login, garagem, fotos, pedido, orcamento, status, avaliacao, administracao
- * e as fronteiras de permissao entre clientes.
+ * Sobe os handlers em Node com um req/res falso e um Postgres embutido
+ * (PGlite) temporario, sem subir a Vercel. Cobre o caminho que o usuario
+ * percorre de verdade: cadastro, login, garagem, fotos, pedido, orcamento,
+ * status, avaliacao, administracao e as fronteiras de permissao entre clientes.
  *
  * uso: npm test
  */
-import { rmSync, existsSync } from 'node:fs';
+import { rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const raiz = fileURLToPath(new URL('..', import.meta.url));
-const arq = join(tmpdir(), `radarteste-${process.pid}.sqlite`);
-for (const sufixo of ['', '-wal', '-shm']) rmSync(arq + sufixo, { force: true });
-process.env.TURSO_DATABASE_URL = `file:${arq}`;
+const dirBanco = join(tmpdir(), `radarteste-${process.pid}`);
+rmSync(dirBanco, { recursive: true, force: true });
+// O teste nunca fala com o Supabase de verdade.
+for (const v of ['SUPABASE_DB_URL', 'POSTGRES_URL', 'DATABASE_URL']) delete process.env[v];
+process.env.PGLITE_DIR = dirBanco;
 process.env.SESSION_SECRET = process.env.SESSION_SECRET || 'segredo-de-teste-0123456789abcdef';
 
 const { Tela } = await import(pathToFileURL(join(raiz, 'scripts', 'desenho.js')).href);
@@ -983,9 +985,10 @@ console.log('\n15. Foto da oficina');
 }
 
 // ------------------------------------------------------------------ resumo
-for (const sufixo of ['', '-wal', '-shm']) {
-  try { rmSync(arq + sufixo, { force: true }); } catch { /* arquivoBusy: irrelevante */ }
-}
+// Fecha o Postgres embutido antes de apagar a pasta de dados.
+const { fechar } = await import(pathToFileURL(join(raiz, 'lib', 'pg.js')).href);
+await fechar();
+try { rmSync(dirBanco, { recursive: true, force: true }); } catch { /* arquivo em uso: irrelevante */ }
 
 console.log(`\n${'-'.repeat(60)}`);
 if (falhas.length) {

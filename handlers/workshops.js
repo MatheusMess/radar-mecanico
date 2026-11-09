@@ -16,7 +16,9 @@ export default rota(async (req) => {
   if (!Number.isFinite(minStars) || minStars < 0) minStars = 0;
   if (minStars > 5) minStars = 5;
 
-  const filtro = minStars > 0 ? 'AND (SELECT avg(r.rating) FROM reviews r WHERE r.workshop_id = w.id) >= ?' : '';
+  const filtro = minStars > 0
+    ? 'AND (SELECT avg(r.rating) FROM reviews r WHERE r.workshop_id = w.id) >= $1'
+    : '';
   const args = minStars > 0 ? [minStars] : [];
 
   const rows = await all(

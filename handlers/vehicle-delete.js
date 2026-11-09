@@ -13,9 +13,9 @@ export default rota(async (req) => {
 
   const d = await lerCorpo(req);
   const id = Number(d.vehicle_id ?? req.query?.vehicle_id ?? 0);
-  const dono = await one('SELECT id FROM vehicles WHERE id = ? AND client_id = ?', [id, sessao.u.id]);
+  const dono = await one('SELECT id FROM vehicles WHERE id = $1 AND client_id = $2', [id, sessao.u.id]);
   if (!dono) return erro('Veículo não encontrado.', 404);
 
-  await run('DELETE FROM vehicles WHERE id = ? AND client_id = ?', [id, sessao.u.id]);
+  await run('DELETE FROM vehicles WHERE id = $1 AND client_id = $2', [id, sessao.u.id]);
   return json({ ok: true });
 });

@@ -5,9 +5,9 @@
  *   npm run seed              apaga e recria os dados demo
  *   node scripts/seed.js --keep  acrescenta sem apagar
  *
- * Sem .env ele popula um SQLite em arquivo na propria pasta, entao da para
- * experimentar sem configurar nada. As imagens sao desenhadas por
- * scripts/desenho.js e guardadas como BLOB (no Vercel nao existe disco
+ * Sem .env ele popula um Postgres embutido (PGlite) na propria pasta, entao da
+ * para experimentar sem configurar nada. As imagens sao desenhadas por
+ * scripts/desenho.js e guardadas como BYTEA (no Vercel nao existe disco
  * gravavel numa funcao serverless).
  */
 import { fileURLToPath } from 'node:url';
@@ -15,7 +15,7 @@ import { prepararEnvLocal } from './envlocal.js';
 
 prepararEnvLocal(fileURLToPath(new URL('..', import.meta.url)));
 
-const { iniciar, all, one, run, batch, syncWorkshopRating, garantirAdmin, gravaEnderecoDoCliente } =
+const { iniciar, all, one, run, syncWorkshopRating, garantirAdmin, gravaEnderecoDoCliente } =
   await import('../lib/db.js');
 const { hashSenha } = await import('../lib/auth.js');
 const { Tela, desenharCarro, desenharOficina } = await import('./desenho.js');
@@ -65,14 +65,14 @@ function bytesDoProblema(chave, indice) {
 }
 
 function idUsuario(email) {
-  return one('SELECT id FROM users WHERE email = ?', [email]).then((u) => (u ? Number(u.id) : null));
+  return one('SELECT id FROM users WHERE email = $1', [email]).then((u) => (u ? Number(u.id) : null));
 }
 
 async function criarUsuario(role, nome, email, telefone, cpf) {
   const existe = await idUsuario(email);
   if (existe) return existe;
   const { lastInsertId } = await run(
-    'INSERT INTO users(role,name,email,password_hash,cpf,phone) VALUES(?,?,?,?,?,?)',
+    'INSERT INTO users(role,name,email,password_hash,cpf,phone) VALUES($1,$2,$3,$4,$5,$6) RETURNING id',
     [role, nome, email, await hashSenha(SENHA), cpf ?? null, telefone]
   );
   return Number(lastInsertId);
@@ -88,7 +88,7 @@ async function main() {
     const antigos = await all("SELECT id FROM users WHERE email LIKE 'demo-%'");
     const ids = antigos.map((u) => Number(u.id));
     if (ids.length) {
-      const l = ids.map(() => '?').join(',');
+      const l = ids.map((_, i) => `$${i + 1}`).join(',');
       // A ordem importa: as tabelas filhas sao limpas antes das maes, e a
       // FK de requests -> workshops mantem a limpeza em cascata manual.
       const filhos = [
@@ -122,7 +122,7 @@ async function main() {
 
   // ------------------------------------------------ catalogo de especialidades
   // RF05: Especialidade + esp_ofc. O catalogo e fixo para o seed nao depender
-  // do que ja existir; INSERT OR IGNORE respeita o UNIQUE do nome.
+  // do que ja existir; ON CONFLICT DO NOTHING respeita o UNIQUE do nome.
   console.log('\nEspecialidades:');
   const CATALOGO = [
     ['Freios e suspensão', 'Pastilhas, discos, amortecedores, molas, buchas e articulações.'],
@@ -140,7 +140,10 @@ async function main() {
     ['Turbo e diesel', 'Injetoras, turbo, common rail e sistemas de escapamento.'],
   ];
   for (const [nome, descricao] of CATALOGO) {
-    await run('INSERT OR IGNORE INTO especialidades(nome,descricao) VALUES(?,?)', [nome, descricao]);
+    await run(
+      'INSERT INTO especialidades(nome,descricao) VALUES($1,$2) ON CONFLICT (nome) DO NOTHING',
+      [nome, descricao]
+    );
   }
   const espIds = {};
   for (const e of await all('SELECT id, nome FROM especialidades')) espIds[e.nome] = Number(e.id);
@@ -208,7 +211,7 @@ async function main() {
     const uid = await criarUsuario('workshop', o.resp, o.email, o.fone);
     const { lastInsertId } = await run(
       `INSERT INTO workshops(user_id,legal_name,cnpj,address,city,description,services,opening_hours,photo,photo_mime,garagem)
-       VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
       [uid, o.razao, o.cnpj, o.end, o.cidade, o.desc, o.serv, o.hor, bytesDeOficina(o.cor), 'image/png', o.garagem]
     );
     const oficinaId = Number(lastInsertId);
@@ -216,7 +219,10 @@ async function main() {
     // esp_ofc: N:N entre oficina e especialidade.
     for (const nome of o.esp) {
       if (espIds[nome]) {
-        await run('INSERT OR IGNORE INTO esp_ofc(oficina_id,especialidade_id) VALUES(?,?)', [oficinaId, espIds[nome]]);
+        await run(
+          'INSERT INTO esp_ofc(oficina_id,especialidade_id) VALUES($1,$2) ON CONFLICT DO NOTHING',
+          [oficinaId, espIds[nome]]
+        );
       }
     }
     console.log(`  #${lastInsertId} ${o.razao} ${o.cidade}${o.garagem ? ' (garagem)' : ''} · ${o.esp.length} especialidade(s)`);
@@ -293,13 +299,13 @@ async function main() {
     for (const [marca, modelo, placa, ano, cor, comb, km, notas, chave, chassi] of c.veiculos) {
       const { lastInsertId } = await run(
         `INSERT INTO vehicles(client_id,make_model,plate,year,brand,model,color,fuel,mileage,notes,chassi)
-         VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
         [uid, `${marca} ${modelo}`, placa, ano, marca, modelo, cor, comb, km, notas, chassi]
       );
       const vid = Number(lastInsertId);
       veicPorEmail[c.email].push(vid);
       for (let i = 0; i < 3; i++) {
-        await run('INSERT INTO vehicle_images(vehicle_id,mime,data) VALUES(?,?,?)',
+        await run('INSERT INTO vehicle_images(vehicle_id,mime,data) VALUES($1,$2,$3)',
           [vid, 'image/png', bytesDeVeiculo(chave, i)]);
       }
       console.log(`  ${c.nome} ${marca} ${modelo} ${placa} 3 foto(s)`);
@@ -311,20 +317,20 @@ async function main() {
   async function pedido(cliId, ofiId, veicId, servico, descricao, status, orcamento = null, avaliacao = null, fotos = 0, chave = 'civic') {
     const { lastInsertId } = await run(
       `INSERT INTO requests(client_id,workshop_id,vehicle_id,service_type,description,status)
-       VALUES(?,?,?,?,?,?)`,
+       VALUES($1,$2,$3,$4,$5,$6) RETURNING id`,
       [cliId, ofiId, veicId, servico, descricao, status]
     );
     const rid = Number(lastInsertId);
     if (orcamento) {
-      await run('INSERT INTO quotes(request_id,message,amount_min,amount_max) VALUES(?,?,?,?)',
+      await run('INSERT INTO quotes(request_id,message,amount_min,amount_max) VALUES($1,$2,$3,$4)',
         [rid, orcamento.msg, orcamento.min, orcamento.max]);
     }
     if (avaliacao) {
-      await run('INSERT INTO reviews(workshop_id,client_id,request_id,rating,comment) VALUES(?,?,?,?,?)',
+      await run('INSERT INTO reviews(workshop_id,client_id,request_id,rating,comment) VALUES($1,$2,$3,$4,$5)',
         [ofiId, cliId, rid, avaliacao.nota, avaliacao.comentario]);
     }
     for (let i = 0; i < fotos; i++) {
-      await run('INSERT INTO request_images(request_id,mime,data) VALUES(?,?,?)',
+      await run('INSERT INTO request_images(request_id,mime,data) VALUES($1,$2,$3)',
         [rid, 'image/png', bytesDoProblema(chave ?? 'civic', i)]);
     }
     console.log(`  #${rid} ${status.padEnd(11)} ${servico.padEnd(26)} ${fotos} foto(s)${avaliacao ? '  (' + '*'.repeat(avaliacao.nota) + ')' : ''}`);

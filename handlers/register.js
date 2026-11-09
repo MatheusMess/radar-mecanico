@@ -46,7 +46,7 @@ export default rota(async (req) => {
   }
 
   const { lastInsertId } = await run(
-    'INSERT INTO users(role,name,email,password_hash,cpf,phone) VALUES(?,?,?,?,?,?)',
+    'INSERT INTO users(role,name,email,password_hash,cpf,phone) VALUES($1,$2,$3,$4,$5,$6) RETURNING id',
     [role, nome, email, await hashSenha(senha), cpf, telefone]
   );
   const userId = Number(lastInsertId);
@@ -54,11 +54,11 @@ export default rota(async (req) => {
   if (oficina) {
     try {
       await run(
-        'INSERT INTO workshops(user_id,legal_name,cnpj,address,city,description,services) VALUES(?,?,?,?,?,?,?)',
+        'INSERT INTO workshops(user_id,legal_name,cnpj,address,city,description,services) VALUES($1,$2,$3,$4,$5,$6,$7)',
         [userId, oficina.razao, oficina.cnpj, oficina.endereco, oficina.cidade, oficina.descricao, oficina.servicos]
       );
     } catch (e) {
-      await run('DELETE FROM users WHERE id = ?', [userId]);
+      await run('DELETE FROM users WHERE id = $1', [userId]);
       throw e;
     }
   }

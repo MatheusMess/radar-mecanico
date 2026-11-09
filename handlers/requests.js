@@ -33,7 +33,7 @@ async function listar(u) {
          JOIN workshops w ON w.id = r.workshop_id
          LEFT JOIN vehicles v ON v.id = r.vehicle_id
          LEFT JOIN quotes q ON q.request_id = r.id
-        WHERE r.client_id = ? ORDER BY r.id DESC`,
+        WHERE r.client_id = $1 ORDER BY r.id DESC`,
       [u.id]
     );
     return json({ requests: rows.map(serializar) });
@@ -46,7 +46,7 @@ async function listar(u) {
        JOIN users c ON c.id = r.client_id
        LEFT JOIN vehicles v ON v.id = r.vehicle_id
        LEFT JOIN quotes q ON q.request_id = r.id
-      WHERE w.user_id = ? ORDER BY r.id DESC`,
+      WHERE w.user_id = $1 ORDER BY r.id DESC`,
     [u.id]
   );
   return json({ requests: rows.map(serializar) });
@@ -63,12 +63,12 @@ async function criar(req, u) {
   if (!servico) return erro('Escolha o tipo de serviço.', 422);
   if (!descricao) return erro('Descreva o problema.', 422);
   if (veiculoId > 0) {
-    const v = await one('SELECT id FROM vehicles WHERE id = ? AND client_id = ?', [veiculoId, u.id]);
+    const v = await one('SELECT id FROM vehicles WHERE id = $1 AND client_id = $2', [veiculoId, u.id]);
     if (!v) return erro('Veículo não encontrado.', 404);
   }
 
   const { lastInsertId } = await run(
-    'INSERT INTO requests(client_id,workshop_id,vehicle_id,service_type,description) VALUES(?,?,?,?,?)',
+    'INSERT INTO requests(client_id,workshop_id,vehicle_id,service_type,description) VALUES($1,$2,$3,$4,$5) RETURNING id',
     [u.id, oficinaId, veiculoId > 0 ? veiculoId : null, servico, descricao]
   );
   return json({ ok: true, request_id: Number(lastInsertId) });

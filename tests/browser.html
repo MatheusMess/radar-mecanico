@@ -60,6 +60,15 @@
   ok('app.js carregou e definiu api()', new Function('return typeof api;')() === 'function');
   ok('app.js carregou e definiu go()', new Function('return typeof go;')() === 'function');
 
+  // Comeca sempre deslogado. O teste pode rodar de novo no mesmo perfil de
+  // navegador, e a sessao da rodada anterior deixaria a tela de login fora do
+  // ar, fazendo a primeira verificacao falhar sem nenhum bug no app.
+  if (new Function('return typeof logout;')() === 'function') {
+    await logout().catch(() => {});
+    await espera(300);
+  }
+  await fetch('/api/logout', { method: 'POST', headers: { 'X-Requested-With': 'radar' } }).catch(() => {});
+
   for (let i = 0; i < 60 && !/Acesse sua conta/.test(texto()); i++) await espera(150);
   ok('tela de login renderizou', /Acesse sua conta/.test(texto()));
 

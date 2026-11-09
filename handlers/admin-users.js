@@ -37,7 +37,7 @@ export default rota(async (req) => {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return erro('Informe um e-mail válido.', 422);
     if (!nome) return erro('Informe o nome.', 422);
     if (senha.length < 8) return erro('A senha deve ter ao menos 8 caracteres.', 422);
-    await run('INSERT INTO users(role,name,email,password_hash,phone) VALUES(?,?,?,?,?)',
+    await run('INSERT INTO users(role,name,email,password_hash,phone) VALUES($1,$2,$3,$4,$5)',
       ['admin', nome, email, await hashSenha(senha), limpar(d.phone) || 'Não informado']);
     return json({ ok: true });
   }
@@ -47,7 +47,7 @@ export default rota(async (req) => {
     if (id === Number(sessao.u.id)) {
       return erro('O administrador não pode bloquear a própria conta.', 422);
     }
-    await run('UPDATE users SET is_blocked = CASE WHEN is_blocked = 1 THEN 0 ELSE 1 END WHERE id = ?', [id]);
+    await run('UPDATE users SET is_blocked = CASE WHEN is_blocked = 1 THEN 0 ELSE 1 END WHERE id = $1', [id]);
     return json({ ok: true });
   }
 

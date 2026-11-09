@@ -21,7 +21,7 @@ export default rota(async (req) => {
   if (sessao.res) return sessao.res;
   if (sessao.u.role !== 'workshop') return erro('Apenas Oficinas podem enviar a foto.', 403);
 
-  const w = await one('SELECT id FROM workshops WHERE user_id = ?', [sessao.u.id]);
+  const w = await one('SELECT id FROM workshops WHERE user_id = $1', [sessao.u.id]);
   if (!w) return erro('Oficina não encontrada.', 404);
 
   const d = await lerCorpo(req);
@@ -29,10 +29,10 @@ export default rota(async (req) => {
 
   if (operacao === 'remove') {
     await run(
-      'UPDATE workshops SET photo = NULL, photo_mime = NULL, photo_rev = photo_rev + 1 WHERE id = ?',
+      'UPDATE workshops SET photo = NULL, photo_mime = NULL, photo_rev = photo_rev + 1 WHERE id = $1',
       [w.id]
     );
-    const depois = await one('SELECT photo_rev FROM workshops WHERE id = ?', [w.id]);
+    const depois = await one('SELECT photo_rev FROM workshops WHERE id = $1', [w.id]);
     return json({ ok: true, has_photo: false, photo_rev: Number(depois.photo_rev) });
   }
 
@@ -60,10 +60,10 @@ export default rota(async (req) => {
   const extra = validas.length > 1 ? ` (${validas.length - 1} arquivo(s) ignorado(s): a fachada e uma foto só)` : '';
 
   await run(
-    'UPDATE workshops SET photo = ?, photo_mime = ?, photo_rev = photo_rev + 1 WHERE id = ?',
+    'UPDATE workshops SET photo = $1, photo_mime = $2, photo_rev = photo_rev + 1 WHERE id = $3',
     [boa.bytes, boa.mime, w.id]
   );
-  const depois = await one('SELECT photo_rev FROM workshops WHERE id = ?', [w.id]);
+  const depois = await one('SELECT photo_rev FROM workshops WHERE id = $1', [w.id]);
 
   return json({
     ok: true,

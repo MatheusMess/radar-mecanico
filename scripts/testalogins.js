@@ -11,11 +11,11 @@ import { fileURLToPath } from 'node:url';
 import { prepararEnvLocal } from './envlocal.js';
 
 const raiz = fileURLToPath(new URL('..', import.meta.url));
-const arq = join(tmpdir(), `radarlogins-${process.pid}.sqlite`);
-for (const s of ['', '-wal', '-shm']) rmSync(arq + s, { force: true });
-process.env.TURSO_DATABASE_URL = `file:${arq}`;
+const dirBanco = join(tmpdir(), `radarlogins-${process.pid}`);
+rmSync(dirBanco, { recursive: true, force: true });
+for (const v of ['SUPABASE_DB_URL', 'POSTGRES_URL', 'DATABASE_URL']) delete process.env[v];
+process.env.PGLITE_DIR = dirBanco;
 prepararEnvLocal(raiz, { padrao: false });
-process.env.TURSO_DATABASE_URL = `file:${arq}`;
 
 // Popula o mesmo banco que o seed usa, em silencio: aqui interessa o resultado.
 const seedLog = console.log;
@@ -91,9 +91,9 @@ for (const c of contas) {
   console.log(`  ${bom ? 'OK   ' : 'FALHA'} ${String(c.role).padEnd(9)} ${String(quem).padEnd(28)} ${c.email}${extra ? '  — ' + extra : ''}`);
 }
 
-for (const s of ['', '-wal', '-shm']) {
-  try { rmSync(arq + s, { force: true }); } catch { /* driver ainda aberto */ }
-}
+const { fechar } = await import('../lib/pg.js');
+await fechar();
+try { rmSync(dirBanco, { recursive: true, force: true }); } catch { /* driver ainda aberto */ }
 
 console.log(falhas ? `\n${falhas} conta(s) falharam.` : `\nTodas as ${contas.length} contas entraram.`);
 process.exitCode = falhas ? 1 : 0;

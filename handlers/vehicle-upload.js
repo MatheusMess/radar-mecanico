@@ -20,7 +20,7 @@ export default rota(async (req) => {
   if (sessao.u.role !== 'client') return erro('Apenas Clientes podem enviar imagens de veículos.', 403);
 
   const vehicleId = Number(req.body?.vehicle_id ?? req.query?.vehicle_id ?? 0);
-  const existe = await one('SELECT id FROM vehicles WHERE id = ? AND client_id = ?', [vehicleId, sessao.u.id]);
+  const existe = await one('SELECT id FROM vehicles WHERE id = $1 AND client_id = $2', [vehicleId, sessao.u.id]);
   if (!existe) return erro('Veículo não encontrado.', 404);
 
   const uploads = normalizarUploads(req.body);
@@ -40,7 +40,7 @@ export default rota(async (req) => {
 
   // Uma transação só: ou as fotos entram todas, ou nenhuma.
   await batch(validas.map((u) => ({
-    sql: 'INSERT INTO vehicle_images(vehicle_id,mime,data) VALUES(?,?,?)',
+    sql: 'INSERT INTO vehicle_images(vehicle_id,mime,data) VALUES($1,$2,$3)',
     args: [vehicleId, u.mime, u.bytes],
   })));
   return json({ ok: true, count: validas.length, rejected: recusados });

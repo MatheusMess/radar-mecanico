@@ -40,12 +40,12 @@ export default rota(async (req) => {
 
   try {
     const { lastInsertId } = await run(
-      'INSERT INTO especialidades(nome,descricao) VALUES(?,?)',
+      'INSERT INTO especialidades(nome,descricao) VALUES($1,$2) RETURNING id',
       [nome, descricao]
     );
     return json({ ok: true, id: Number(lastInsertId) });
   } catch (e) {
-    if (/UNIQUE constraint failed/.test(String(e.message))) {
+    if (/duplicate key value violates unique constraint/i.test(String(e.message))) {
       return erro('Já existe uma especialidade com este nome.', 422);
     }
     throw e;
