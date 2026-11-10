@@ -5,7 +5,7 @@
   "description": "Radar Mecânico - sistema de orçamentos entre clientes e oficinas. Frontend estático + funções serverless + Postgres (Supabase).",
   "type": "module",
   "engines": {
-    "node": ">=18"
+    "node": "22.x"
   },
   "scripts": {
     "dev": "node scripts/devlocal.js",
