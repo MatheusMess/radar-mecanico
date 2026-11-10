@@ -513,7 +513,9 @@ async function tabelaDeLogins() {
   }
 }
 
-main().catch((e) => {
+try {
+  await main();
+} catch (e) {
   console.error('Falha no seed:', e?.message || e);
   process.exitCode = 1;
-});
+}

@@ -104,13 +104,20 @@ para quem preferir rodar uma vez no SQL Editor do Supabase.
 ### 1. Banco no Supabase
 
 1. Crie um projeto em [supabase.com](https://supabase.com) (o plano grátis serve).
-2. Abra **Project Settings → Database → Connection string** e copie a URI.
-   - Para a Vercel, prefira a **Session pooler** (porta 5432) ou a
-     **Transaction pooler** (porta 6543): a conexão direta só resolve IPv6.
+2. Abra o projeto e clique em **Connect** (ou **Project Settings → Database**) e copie a URI de
+   **Session pooler** (porta 5432) ou **Transaction pooler** (porta 6543).
+   - **Não use a "Direct connection"**: o host `db.<ref>.supabase.co` só responde por IPv6 e a
+     Vercel não tem IPv6. O pooler é IPv4.
+   - O host do pooler muda de projeto para projeto (`aws-0-<região>` ou `aws-1-<região>`). Se a
+     URI não estiver visível, dá para descobrir por tentativa: um host de região errada responde
+     `tenant/user postgres.<ref> not found`.
    - A URI já vem com a senha do banco. Se tiver perdido, dá para redefinir em
      **Database → Reset database password**.
 3. Opcional: cole `supabase/schema.sql` no **SQL Editor** e rode. Se não rodar
    nada, a primeira requisição da API cria tudo sozinha.
+
+Depois de configurar a `SUPABASE_DB_URL`, rode `npm run db:push` para conferir as tabelas e
+`npm run seed` para os dados de demonstração.
 
 ### 2. Na Vercel
 
@@ -139,22 +146,17 @@ Troque em **Minha conta → Alterar senha** antes de mostrar para qualquer pesso
 
 Precisa do Node 18+ (a Vercel usa a mesma versão).
 
-Há dois jeitos. O primeiro espelha a Vercel e usa o CLI:
-
-```bash
-npm install
-npm run dev          # vercel dev, em http://localhost:3000
-```
-
-O segundo não precisa da Vercel: `scripts/devlocal.js` serve os arquivos e
-monta o `/api` chamando os mesmos handlers, com um Postgres embutido (PGlite)
-ou o Supabase, se houver URL configurada.
+Há dois jeitos. O mais direto não precisa da Vercel: `scripts/devlocal.js` serve os arquivos e
+monta o `/api` chamando os mesmos handlers, com o banco que estiver configurado.
 
 ```bash
 npm install
 npm run seed          # opcional: dados de demonstração
-npm run dev:local     # http://127.0.0.1:8787
+npm run dev           # http://127.0.0.1:8787  (alias: npm run dev:local)
 ```
+
+O outro usa o runtime da Vercel: `npm run dev:vercel`, em `http://localhost:3000`. (O script
+`dev` do `package.json` não pode chamar `vercel dev`, senão o CLI entra em recursão.)
 
 **Não é preciso configurar nada.** Sem um `.env`, o servidor usa um Postgres
 embutido em `.local-pg` e gera um `SESSION_SECRET` aleatório, que fica gravado
@@ -164,9 +166,14 @@ reinício. O `.local-pg` é só desenvolvimento — o banco de verdade é o Supa
 Para apontar para o Supabase também no seu computador, crie um `.env`:
 
 ```
-SUPABASE_DB_URL=postgresql://postgres.SEU_PROJETO:SENHA@aws-0-REGIAO.pooler.supabase.com:6543/postgres
+SUPABASE_DB_URL=postgresql://postgres.SEU_PROJETO:SENHA@aws-1-REGIAO.pooler.supabase.com:5432/postgres
 SESSION_SECRET=<valor aleatorio longo>
 ```
+
+Com esse `.env` presente, `npm run dev`, `npm run seed` e `npm run test:logins` falam com o banco
+de produção. Quem escreve dados é o `seed` (e `npm run test:browser`, que cria veículos e troca a
+foto da fachada antes de restaurar) — `npm test` e `npm run check` sempre usam um Postgres
+embutido temporário, porque apagam a variável de banco antes de conectar.
 
 Em produção a `SESSION_SECRET` tem que vir das variáveis de ambiente da Vercel
 e **não pode mudar**: é ela que assina o cookie de sessão. Se trocar, todas as
@@ -228,16 +235,25 @@ npm run check        # sintaxe, imports e execução das consultas
 npm test             # 192 asserções sobre os endpoints
 npm run test:logins  # todas as contas do seed entram de verdade
 npm run test:browser # as telas do app contra a API (precisa do dev:local no ar)
+npm run test:prod    # fumaça contra o site publicado (https://radar-mecanico.vercel.app)
 ```
 
 `npm run check` não sobe servidor nem usa rede: valida a sintaxe de todos os `.js`, confere se
 cada nome importado existe no módulo de origem e executa o schema e todas as consultas contra um
-Postgres embutido temporário (PGlite, o mesmo dialeto do Supabase).
+Postgres embutido temporário (PGlite, o mesmo dialeto do Supabase). A sintaxe sai de `node --check`,
+que só analisa o arquivo — executar o topo de cada script abria conexões e deixava o processo
+pendurado.
 
 `npm test` sobe os handlers em Node com `req`/`res` falsos e um banco próprio. Cobre cadastro,
 login, CSRF, garagem, fotos, pedido, orçamento, status, avaliação, administração e as fronteiras
 de permissão entre clientes — inclusive o caso em que um cliente tenta ler a foto do pedido de
 outro.
+
+`npm run test:prod` é o teste de fumaça contra o site no ar, usando as contas do seed: login dos
+três perfis, listagem de oficinas, garagem, upload/leitura da foto de um veículo (multipart +
+BYTEA), troca e restauração da foto da fachada e a central de administração. O veículo criado é
+excluído no fim e a foto da oficina volta a ser a original. Para apontar para outro endereço:
+`node scripts/smoketest.js http://127.0.0.1:8787`.
 
 `npm run test:browser` é o teste de interface: sobe o navegador, entra no app com uma conta de
 demonstração e percorre as telas. Para rodá-lo automático, deixe `npm run dev:local` em outro
@@ -251,6 +267,12 @@ gravável, então a foto vai para o Postgres e é servida por `/api/image`. O pr
 tamanho: 2 MB por imagem e 3 MB por envio (o corpo da requisição é limitado a ~4,5 MB pela
 plataforma). Se um dia as fotos crescerem, o caminho natural é trocar o BYTEA pelo Supabase
 Storage e guardar só o caminho da imagem na tabela.
+
+**Na Vercel, multipart chega sem `req.body`.** O parser da plataforma entende JSON e formulário
+urlencoded; para `multipart/form-data` ela deixa `req.body` indefinido, mas o stream continua
+intacto. Por isso `api/index.js` lê os bytes do próprio `req` e passa por `lib/multipart.js` —
+o mesmo módulo que o servidor de desenvolvimento usa. Sem isso, o upload da foto da oficina
+funcionava local e falhava em produção com "Selecione uma imagem".
 
 **A foto da fachada é redimensionada no navegador antes de subir.** Uma foto de celular tem
 4000 px e 4 MB; ia para o banco inteira e o card baixava tudo isso para exibir 300 px. O
@@ -314,6 +336,9 @@ tela mostra com hífen.
 
 ## Primeiro teste depois do deploy
 
-Suba uma foto de veículo e um pedido com foto. É o caminho que mais depende da plataforma: o
-Vercel precisa entregar o `multipart/form-data` já parseado em `req.body`. Se der erro, o
-endpoint responde `422` — me avise que ajusto o `normalizarUploads`.
+Rode `npm run test:prod`. Ele faz o caminho que mais depende da plataforma, contra o site no ar:
+cria um veículo, sobe a foto (multipart), confere os bytes servidos por `/api/image`, troca a foto
+da fachada da oficina, confere de novo, restaura a original, e termina na central de
+administração. Se algo passar local e falhar em produção, o suspeito número um é o corpo da
+requisição — `api/index.js` já trata o caso em que a Vercel entrega `multipart/form-data` sem
+`req.body`, mas vale conferir se a plataforma mudou o comportamento.

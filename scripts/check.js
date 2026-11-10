@@ -140,7 +140,8 @@ try {
     ['vehicles', 'chassi'], ['workshops', 'garagem'], ['workshops', 'photo_rev'], ['requests', 'detalhes'],
   ]) {
     const info = await all(
-      'SELECT column_name FROM information_schema.columns WHERE table_name = $1',
+      `SELECT column_name FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = $1`,
       [tabela]
     );
     if (!info.some((r) => r.column_name === coluna)) {

@@ -62,12 +62,32 @@ const ROTAS = {
 // O maior limite de corpo entre os handlers e 5 MB (uploads de foto).
 export const config = { api: { bodyParser: { sizeLimit: '5mb' } } };
 
+/**
+ * Le o corpo cru da requisicao.
+ *
+ * Na Vercel, multipart/form-data chega com req.body indefinido: o parser da
+ * plataforma entende JSON e formulario urlencoded, e deixa multipart de fora.
+ * O stream, porem, continua intacto, entao os bytes sao lidos daqui. No dev
+ * local o corpo ja vem em req.body (Buffer), que e o primeiro caso.
+ */
+async function lerCorpoCru(req) {
+  if (Buffer.isBuffer(req.body)) return req.body;
+  if (req.body instanceof Uint8Array) return Buffer.from(req.body);
+  if (typeof req.body === 'string') return Buffer.from(req.body, 'binary');
+  const pedacos = [];
+  for await (const pedaco of req) {
+    pedacos.push(typeof pedaco === 'string' ? Buffer.from(pedaco, 'binary') : Buffer.from(pedaco));
+  }
+  return Buffer.concat(pedacos);
+}
+
 export default async function handler(req, res) {
-  // O upload da foto chega como multipart/form-data. A Vercel entrega o corpo
-  // cru (Buffer), e nao um objeto: quem separa os campos e o lib/multipart.js.
+  // O upload da foto chega como multipart/form-data. Os campos viram o mesmo
+  // objeto que os handlers esperam: { "images[]": {data,filename,mimetype}, ... }
   const tipo = req.headers?.['content-type'];
-  if (ehMultipart(tipo) && (Buffer.isBuffer(req.body) || req.body instanceof Uint8Array)) {
-    req.body = corpoMultipart(req.body, tipo) ?? {};
+  if (ehMultipart(tipo)) {
+    const bruto = await lerCorpoCru(req);
+    req.body = bruto.length ? corpoMultipart(bruto, tipo) ?? {} : {};
   }
 
   const caminho = (req.url || '').split('?')[0];

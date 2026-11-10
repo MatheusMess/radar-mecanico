@@ -13,16 +13,20 @@ import { prepararEnvLocal } from './envlocal.js';
 const raiz = fileURLToPath(new URL('..', import.meta.url));
 const dirBanco = join(tmpdir(), `radarlogins-${process.pid}`);
 rmSync(dirBanco, { recursive: true, force: true });
+// A ordem importa: prepararEnvLocal le .env, que pode ter a URL do Supabase de
+// verdade. Depois dele, o teste volta a apontar para o Postgres embutido — o
+// teste nunca pode escrever no banco de producao (o seed apaga dados demo).
+prepararEnvLocal(raiz, { padrao: false });
 for (const v of ['SUPABASE_DB_URL', 'POSTGRES_URL', 'DATABASE_URL']) delete process.env[v];
 process.env.PGLITE_DIR = dirBanco;
-prepararEnvLocal(raiz, { padrao: false });
 
 // Popula o mesmo banco que o seed usa, em silencio: aqui interessa o resultado.
+// O seed termina com await de verdade (main() no topo), entao o import so
+// resolve quando as contas existem.
 const seedLog = console.log;
 console.log = () => {};
 try {
   await import('./seed.js');
-  await new Promise((r) => setTimeout(r, 500));
 } finally {
   console.log = seedLog;
 }

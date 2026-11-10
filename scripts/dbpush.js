@@ -29,7 +29,8 @@ try {
   console.log(`\n${tabelas.length} tabelas:`);
   for (const t of tabelas) {
     const c = await all(
-      'SELECT count(*) n FROM information_schema.columns WHERE table_name = $1',
+      `SELECT count(*) n FROM information_schema.columns
+        WHERE table_schema = 'public' AND table_name = $1`,
       [t.nome]
     );
     console.log(`  ${t.nome.padEnd(20)} ${c[0].n} coluna(s)`);

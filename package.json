@@ -8,14 +8,16 @@
     "node": ">=18"
   },
   "scripts": {
-    "dev": "vercel dev",
+    "dev": "node scripts/devlocal.js",
     "dev:local": "node scripts/devlocal.js",
+    "dev:vercel": "vercel dev",
     "build": "echo 'Projeto estatico: nao ha etapa de build.'",
     "db:push": "node scripts/dbpush.js",
     "seed": "node scripts/seed.js",
     "test": "node scripts/testeapi.js",
     "test:browser": "node scripts/browsercheck.js http://127.0.0.1:8787/tests/browser.html #r FIM 90",
     "test:logins": "node scripts/testalogins.js",
+    "test:prod": "node scripts/smoketest.js https://radar-mecanico.vercel.app",
     "check": "node scripts/check.js"
   },
   "dependencies": {
