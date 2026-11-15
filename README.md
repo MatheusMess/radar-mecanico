@@ -303,7 +303,13 @@ de cima. Agora a base é 45, a camada de baixo 44 e o zoom da foto 60. A altura 
 `100dvh - 16px` (com `vh` de reserva) porque `92vh` mais a margem passa da tela no iOS e cortava o
 fim da lista de avaliações. Enquanto há modal aberto o `body` recebe `overflow:hidden` (com
 compensação da barra de rolagem), senão o dedo arrastava o fundo e a tela parecia flutuar. Campos
-de formulário ficam com 16px no celular, o mínimo para o iOS não dar zoom ao focar.
+de formulário ficam com 16px no celular, o mínimo para o iOS não dar zoom ao focar. No celular o
+modal ocupa `100%` da área livre do `.modal-back` (que já desconta margem e área segura), então não
+precisa repetir o cálculo a cada aparelho.
+
+**`[hidden]` precisa de regra própria.** O atributo `hidden` só vale enquanto nenhuma classe define
+`display`: `.foto-preview{display:flex}` vencia e a caixa vazia do preview da foto ficava sempre
+visível no perfil da oficina. Por isso existe `[hidden]{display:none!important}` no topo do CSS.
 
 **Cuidado com a ordem das regras responsivas.** A regra de 5 colunas de `.request` (pedidos e
 lista de usuários do admin) vinha *depois* do `@media(max-width:800px)`, então vencia o grid de 2
