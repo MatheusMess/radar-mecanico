@@ -1,5 +1,5 @@
 import { json, erro, rota, lerCorpo, limpar, digitos, csrfOk } from '../lib/http.js';
-import { iniciar, run } from '../lib/db.js';
+import { iniciar, one, run, telefoneKey, telefoneValido } from '../lib/db.js';
 import { hashSenha, criarToken, cookieSessao } from '../lib/auth.js';
 import { publicUser } from './login.js';
 
@@ -17,10 +17,16 @@ export default rota(async (req) => {
   const nome = limpar(d.name);
   const email = String(d.email ?? '').trim().toLowerCase();
   const senha = String(d.password ?? '');
-  const telefone = limpar(d.phone);
+  // O telefone e guardado so com digitos, para "(11) 98888-7777" e
+  // "11988887777" nao gerarem dois contatos diferentes.
+  const telefone = telefoneKey(d.phone);
 
   if (!['client', 'workshop'].includes(role)) return erro('Perfil inválido.', 422);
-  if (!nome || !telefone) return erro('Informe nome e telefone.', 422);
+  if (!nome) return erro('Informe o nome completo.', 422);
+  if (!telefone) return erro('Informe um telefone com DDD.', 422);
+  if (!telefoneValido(telefone)) {
+    return erro('Telefone inválido. Informe DDD + número (10 ou 11 dígitos).', 422);
+  }
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return erro('Informe um e-mail válido.', 422);
   if (senha.length < 8) return erro('A senha deve ter ao menos 8 caracteres.', 422);
 
@@ -29,6 +35,9 @@ export default rota(async (req) => {
   if (role === 'client') {
     cpf = digitos(d.cpf);
     if (cpf.length !== 11) return erro('Informe um CPF com 11 dígitos.', 422);
+    // Cada CPF identifica uma conta: o mesmo documento nao pode cadastrar duas.
+    const outro = await one('SELECT id FROM users WHERE cpf = $1', [cpf]);
+    if (outro) return erro('Este CPF já está cadastrado.', 422);
   } else {
     const razao = limpar(d.legal_name);
     const cnpj = digitos(d.cnpj);

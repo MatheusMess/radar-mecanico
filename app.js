@@ -128,6 +128,29 @@ function maskCpfCnpj(el) {
     : d.replace(/^(\d{3})(\d{3})(\d{3})(\d{0,2})$/, '$1.$2.$3-$4');
 }
 
+// O banco guarda só os dígitos do telefone; a tela mostra (DDD) 9XXXX-XXXX.
+const telefoneDigitos = (v) => {
+  const d = String(v ?? '').replace(/\D/g, '');
+  // +55 (13 dígitos) ou 55 + DDD + número (12): o código do país sai.
+  return d.length > 11 && d.startsWith('55') ? d.slice(2) : d;
+};
+
+const fmtFone = (v) => {
+  const d = telefoneDigitos(v).slice(0, 11);
+  if (d.length === 11) return d.replace(/^(\d{2})(\d{5})(\d{4})$/, '($1) $2-$3');
+  if (d.length === 10) return d.replace(/^(\d{2})(\d{4})(\d{4})$/, '($1) $2-$3');
+  return d;
+};
+
+function maskFone(el) {
+  const d = telefoneDigitos(el.value).slice(0, 11);
+  if (d.length > 10) el.value = d.replace(/^(\d{2})(\d{5})(\d{4})$/, '($1) $2-$3');
+  else if (d.length === 10) el.value = d.replace(/^(\d{2})(\d{4})(\d{4})$/, '($1) $2-$3');
+  else if (d.length > 6) el.value = d.replace(/^(\d{2})(\d{4})(\d{0,4})$/, '($1) $2-$3');
+  else if (d.length > 2) el.value = d.replace(/^(\d{2})(\d{0,5})$/, '($1) $2');
+  else el.value = d;
+}
+
 /** Máscara de CEP: 00000-000. */
 function maskCep(el) {
   const d = el.value.replace(/\D/g, '').slice(0, 8);
@@ -187,7 +210,7 @@ function msg(x) {
 }
 
 function registerPage() {
-  app.innerHTML = `<main class="auth-page"><section class="auth-brand"><div class="brand">${brandHtml()} Radar Mecânico</div><div><div class="hero-kicker">Novo cadastro</div><h1>Faça parte da<br><span>rede Radar.</span></h1><p>Dados completos ajudam a manter Clientes e Oficinas protegidos.</p></div></section><section class="auth-panel"><div class="eyebrow">Cadastro</div><h2>Crie sua conta</h2><div class="role-switch"><button id="clientRole" type="button" class="active">Sou Cliente</button><button id="workshopRole" type="button">Sou Oficina</button></div><form id="signup"><input name="role" value="client" type="hidden"><label class="form-label">Nome completo</label><input class="input" name="name" required><label class="form-label">E-mail</label><input class="input" name="email" type="email" required><label class="form-label">Telefone</label><input class="input" name="phone" required><div id="fields"><label class="form-label">CPF</label><input class="input" name="cpf" required placeholder="000.000.000-00" oninput="maskCpfCnpj(this)"></div><label class="form-label">Senha (mín. 8 caracteres)</label><input class="input" name="password" type="password" minlength="8" required><button class="btn primary full">Criar conta →</button></form><p><button type="button" class="link-btn" onclick="loginPage()">← Voltar</button></p><div id="msg"></div></section></main>`;
+  app.innerHTML = `<main class="auth-page"><section class="auth-brand"><div class="brand">${brandHtml()} Radar Mecânico</div><div><div class="hero-kicker">Novo cadastro</div><h1>Faça parte da<br><span>rede Radar.</span></h1><p>Dados completos ajudam a manter Clientes e Oficinas protegidos.</p></div></section><section class="auth-panel"><div class="eyebrow">Cadastro</div><h2>Crie sua conta</h2><div class="role-switch"><button id="clientRole" type="button" class="active">Sou Cliente</button><button id="workshopRole" type="button">Sou Oficina</button></div><form id="signup"><input name="role" value="client" type="hidden"><label class="form-label">Nome completo</label><input class="input" name="name" required><label class="form-label">E-mail</label><input class="input" name="email" type="email" required><label class="form-label">Telefone</label><input class="input" name="phone" type="tel" inputmode="tel" placeholder="(11) 98888-7777" oninput="maskFone(this)" required><div id="fields"><label class="form-label">CPF</label><input class="input" name="cpf" required placeholder="000.000.000-00" oninput="maskCpfCnpj(this)"></div><label class="form-label">Senha (mín. 8 caracteres)</label><input class="input" name="password" type="password" minlength="8" required><button class="btn primary full">Criar conta →</button></form><p><button type="button" class="link-btn" onclick="loginPage()">← Voltar</button></p><div id="msg"></div></section></main>`;
   document.querySelector('#clientRole').addEventListener('click', () => setRegisterRole('client'));
   document.querySelector('#workshopRole').addEventListener('click', () => setRegisterRole('workshop'));
   document.querySelector('#signup').onsubmit = async (x) => {
@@ -366,7 +389,7 @@ async function workshopDetail(id) {
     <hr class="rule">
     <p>${e(w.description || 'Esta oficina ainda não escreveu uma descrição.')}</p>
     <div class="contact-row"><i>◎</i> ${e(w.city)}${w.address ? ` · ${e(w.address)}` : ''}</div>
-    <div class="contact-row"><i>☎</i> ${e(w.phone)}</div>
+    <div class="contact-row"><i>☎</i> ${e(fmtFone(w.phone))}</div>
     ${w.opening_hours ? `<div class="contact-row"><i>◷</i> ${e(w.opening_hours)}</div>` : ''}
     ${w.garagem ? '<p class="hint"><b>Garagem própria:</b> o veículo do cliente fica guardado no local.</p>' : ''}
     ${w.especialidades?.length ? `<h3 class="panel-title">Especialidades</h3><div class="tag-row">${w.especialidades.map((x) => `<span class="tag">${e(x.nome)}</span>`).join('')}</div>` : ''}
@@ -456,10 +479,10 @@ async function profile() {
     : admin ? [] : [['Veículos', s.vehicles ?? 0], ['Pedidos', s.requests ?? 0]];
 
   const dados = admin
-    ? `<div class="two-col"><div><label class="form-label">Nome</label><input class="input" name="name" value="${e(r.user.name)}" required></div><div><label class="form-label">Telefone</label><input class="input" name="phone" value="${e(r.user.phone)}" required></div></div><div class="two-col"><div><label class="form-label">E-mail de acesso</label><input class="input" value="${e(r.user.email)}" disabled></div><div><label class="form-label">Nível de acesso</label><input class="input" value="Administrador" disabled></div></div><p class="hint">O e-mail de acesso não pode ser alterado por esta tela.</p>`
+    ? `<div class="two-col"><div><label class="form-label">Nome</label><input class="input" name="name" value="${e(r.user.name)}" required></div><div><label class="form-label">Telefone</label><input class="input" name="phone" type="tel" inputmode="tel" value="${e(fmtFone(r.user.phone))}" oninput="maskFone(this)" required></div></div><div class="two-col"><div><label class="form-label">E-mail de acesso</label><input class="input" value="${e(r.user.email)}" disabled></div><div><label class="form-label">Nível de acesso</label><input class="input" value="Administrador" disabled></div></div><p class="hint">O e-mail de acesso não pode ser alterado por esta tela.</p>`
     : office
-      ? `<div class="two-col"><div><label class="form-label">Nome do responsável</label><input class="input" name="name" value="${e(r.user.name)}" required></div><div><label class="form-label">Telefone</label><input class="input" name="phone" value="${e(r.user.phone)}" required></div></div><div class="two-col"><div><label class="form-label">Razão social</label><input class="input" name="legal_name" value="${e(w.legal_name)}" required></div><div><label class="form-label">CNPJ</label><input class="input" name="cnpj" value="${e(fmtDoc(w.cnpj))}" required oninput="maskCpfCnpj(this)"></div></div><label class="form-label">Endereço</label><input class="input" name="address" value="${e(w.address)}" required><div class="two-col"><div><label class="form-label">Cidade</label><input class="input" name="city" value="${e(w.city)}" required></div><div><label class="form-label">Horário de funcionamento</label><input class="input" name="opening_hours" value="${e(w.opening_hours)}" placeholder="Seg–Sex, 08:00–18:00"></div></div><label class="form-label">Serviços atendidos</label><input class="input" name="services" value="${e(w.services)}" placeholder="Revisão, freios, elétrica"><label class="form-label">Descrição pública</label><textarea class="input" name="description" rows="4" placeholder="Conte o que a oficina faz de melhor.">${e(w.description)}</textarea>`
-      : `<div class="two-col"><div><label class="form-label">Nome completo</label><input class="input" name="name" value="${e(r.user.name)}" required></div><div><label class="form-label">Telefone</label><input class="input" name="phone" value="${e(r.user.phone)}" required></div></div><div class="two-col"><div><label class="form-label">CPF</label><input class="input" name="cpf" value="${e(fmtDoc(r.user.cpf))}" required oninput="maskCpfCnpj(this)"></div><div><label class="form-label">E-mail</label><input class="input" value="${e(r.user.email)}" disabled></div></div><p class="hint">As fotos dos seus veículos ficam visíveis para as oficinas que recebem seus pedidos.</p>`;
+      ? `<div class="two-col"><div><label class="form-label">Nome do responsável</label><input class="input" name="name" value="${e(r.user.name)}" required></div><div><label class="form-label">Telefone</label><input class="input" name="phone" type="tel" inputmode="tel" value="${e(fmtFone(r.user.phone))}" oninput="maskFone(this)" required></div></div><div class="two-col"><div><label class="form-label">Razão social</label><input class="input" name="legal_name" value="${e(w.legal_name)}" required></div><div><label class="form-label">CNPJ</label><input class="input" name="cnpj" value="${e(fmtDoc(w.cnpj))}" required oninput="maskCpfCnpj(this)"></div></div><label class="form-label">Endereço</label><input class="input" name="address" value="${e(w.address)}" required><div class="two-col"><div><label class="form-label">Cidade</label><input class="input" name="city" value="${e(w.city)}" required></div><div><label class="form-label">Horário de funcionamento</label><input class="input" name="opening_hours" value="${e(w.opening_hours)}" placeholder="Seg–Sex, 08:00–18:00"></div></div><label class="form-label">Serviços atendidos</label><input class="input" name="services" value="${e(w.services)}" placeholder="Revisão, freios, elétrica"><label class="form-label">Descrição pública</label><textarea class="input" name="description" rows="4" placeholder="Conte o que a oficina faz de melhor.">${e(w.description)}</textarea>`
+      : `<div class="two-col"><div><label class="form-label">Nome completo</label><input class="input" name="name" value="${e(r.user.name)}" required></div><div><label class="form-label">Telefone</label><input class="input" name="phone" type="tel" inputmode="tel" value="${e(fmtFone(r.user.phone))}" oninput="maskFone(this)" required></div></div><div class="two-col"><div><label class="form-label">CPF</label><input class="input" name="cpf" value="${e(fmtDoc(r.user.cpf))}" required oninput="maskCpfCnpj(this)"></div><div><label class="form-label">E-mail</label><input class="input" value="${e(r.user.email)}" disabled></div></div><p class="hint">As fotos dos seus veículos ficam visíveis para as oficinas que recebem seus pedidos.</p>`;
 
   return `<div class="eyebrow">Dados da conta</div><h1 class="page-title">${office ? 'Dados da Oficina' : admin ? 'Minha conta' : 'Meus dados'}</h1><p class="subhead">${office ? 'Estas informações aparecem para os clientes que procuram sua oficina.' : 'Atualize os dados usados no atendimento e nas solicitações de orçamento.'}</p>${office ? avaliacaoPublica(r) : ''}${kpis.length ? `<section class="office-kpi garage-kpi">${kpis.map((k) => `<div class="metric"><small>${k[0]}</small><b>${k[1]}</b><span>no sistema</span></div>`).join('')}</section>` : ''}<section class="profile-panel"><form id="profileForm"><h2 class="panel-title">${office ? 'Dados da oficina' : 'Dados pessoais'}</h2>${dados}${office ? garagemCheck(w) : ''}<button class="btn primary full">Salvar alterações</button></form>${office ? especialidadesForm(r) : ''}${office ? '' : enderecosForm(r.enderecos || [])}<hr class="rule"><form id="passwordForm"><h2 class="panel-title">Alterar senha</h2><label class="form-label">Senha atual</label><input class="input" name="current_password" type="password" autocomplete="current-password" required><div class="two-col"><div><label class="form-label">Nova senha</label><input class="input" name="new_password" type="password" minlength="8" autocomplete="new-password" required></div><div><label class="form-label">Repetir nova senha</label><input class="input" name="new_password2" type="password" minlength="8" autocomplete="new-password" required></div></div><button class="btn ghost full">Atualizar senha</button></form>${office ? fotoOficinaForm(r) : ''}</section>${office ? `<section class="profile-panel"><h2 class="panel-title">Avaliações recebidas</h2>${commentBlock(r.reviews, 20)}</section>` : ''}`;
 }
@@ -1083,7 +1106,7 @@ async function adminPanel() {
 }
 
 function adminModal() {
-  modal('Criar administrador', `<form id="newAdmin"><label class="form-label">Nome</label><input class="input" name="name" required><label class="form-label">E-mail</label><input class="input" name="email" type="email" required><label class="form-label">Telefone</label><input class="input" name="phone"><label class="form-label">Senha temporária</label><input class="input" name="password" type="password" minlength="8" required><button class="btn primary full">Criar administrador</button></form>`);
+  modal('Criar administrador', `<form id="newAdmin"><label class="form-label">Nome</label><input class="input" name="name" required><label class="form-label">E-mail</label><input class="input" name="email" type="email" required><label class="form-label">Telefone</label><input class="input" name="phone" type="tel" inputmode="tel" placeholder="(11) 98888-7777" oninput="maskFone(this)"><label class="form-label">Senha temporária</label><input class="input" name="password" type="password" minlength="8" required><button class="btn primary full">Criar administrador</button></form>`);
   document.querySelector('#newAdmin').onsubmit = async (x) => {
     x.preventDefault();
     const d = form(x.target);

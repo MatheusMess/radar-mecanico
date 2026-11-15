@@ -112,6 +112,7 @@ console.log('\n1. Cadastro e login');
   });
   igual('cadastro de cliente', r.status, 200);
   igual('perfil do cadastro', r.body?.user?.role, 'client');
+  igual('telefone do cadastro guardado sem pontuacao', r.body?.user?.phone, '11988881111');
   ok('cookie de sessao no cadastro', !!r.headers['set-cookie'], JSON.stringify(r.headers));
   guardarCookie('ana', r);
 
@@ -119,20 +120,44 @@ console.log('\n1. Cadastro e login');
     method: 'POST',
     body: {
       role: 'client', name: 'Outra', email: 'ANA@test.local', password: 'Senha12345',
-      phone: '(11) 9', cpf: '11144477735',
+      phone: '(11) 95555-4444', cpf: '33344455566',
     },
   });
   igual('e-mail duplicado recusado', dup.status, 422);
 
+  const cpfRepetido = await chamar(H.register, {
+    method: 'POST',
+    body: {
+      role: 'client', name: 'Mesmo CPF', email: 'outro@test.local', password: 'Senha12345',
+      phone: '(11) 95555-4444', cpf: '111.444.777-35',
+    },
+  });
+  igual('CPF duplicado recusado', cpfRepetido.status, 422);
+
+  const telefoneRuim = await chamar(H.register, {
+    method: 'POST',
+    body: {
+      role: 'client', name: 'Telefone Curto', email: 'tel@test.local', password: 'Senha12345',
+      phone: '1', cpf: '44455566677',
+    },
+  });
+  igual('telefone invalido recusado', telefoneRuim.status, 422);
+
   const semCpf = await chamar(H.register, {
     method: 'POST',
-    body: { role: 'client', name: 'Sem CPF', email: 's@e.local', password: 'Senha12345', phone: '1' },
+    body: {
+      role: 'client', name: 'Sem CPF', email: 's@e.local', password: 'Senha12345',
+      phone: '(11) 95555-4444',
+    },
   });
   igual('CPF invalido recusado', semCpf.status, 422);
 
   const curta = await chamar(H.register, {
     method: 'POST',
-    body: { role: 'client', name: 'Curta', email: 'c@e.local', password: '123', phone: '1', cpf: '11144477735' },
+    body: {
+      role: 'client', name: 'Curta', email: 'c@e.local', password: '123',
+      phone: '(11) 95555-4444', cpf: '44455566677',
+    },
   });
   igual('senha curta recusada', curta.status, 422);
 
@@ -621,7 +646,7 @@ console.log('\n10. Administração');
 
   const criado = await chamar(H['admin-users'], {
     method: 'POST', cookie: sessaoDe('admin'),
-    body: { operation: 'create_admin', name: 'Segundo Admin', email: 'admin2@test.local', password: 'Senha12345', phone: '1' },
+    body: { operation: 'create_admin', name: 'Segundo Admin', email: 'admin2@test.local', password: 'Senha12345', phone: '(11) 97777-6666' },
   });
   igual('admin criado', criado.status, 200);
 

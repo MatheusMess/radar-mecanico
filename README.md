@@ -324,6 +324,13 @@ ficaria impossível de excluir da garagem: o `DELETE` falharia por chave estrang
 Mercosul, que são o padrão desde 2018. O banco guarda sem separador para evitar duplicatas e a
 tela mostra com hífen.
 
+**Documentos e contato entram com pontuação e são guardados só com dígitos.** CPF, CNPJ, CEP,
+chassi e placa aceitam `544.927.708-36`, `11.222.333/0001-81`, `01310-100`, então o mesmo dado
+não vira dois cadastros por causa de ponto ou hífen. O telefone segue a mesma regra: `(15)
+99624-9572`, `15 99624-9572` e `+55 15 99624-9572` viram `15996249572`, e a tela devolve a
+máscara ao exibir. O telefone precisa ter DDD (10 ou 11 dígitos), o CPF 11 e o CNPJ 14; um CPF
+já usado por outra conta é recusado no cadastro e na edição do perfil.
+
 ## Requisitos do diagrama ainda não implementados
 
 - **RF03** — foto no cadastro do usuário (a foto da oficina e as fotos do

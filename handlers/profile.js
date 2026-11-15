@@ -4,7 +4,7 @@ import {
 import {
   all, one, run, cepValido, enderecosDoCliente, gravaEnderecoDoCliente,
   removeEnderecoDoCliente, especialidadesDaOficina, defineEspecialidades,
-  listaEspecialidades,
+  listaEspecialidades, telefoneKey, telefoneValido,
 } from '../lib/db.js';
 
 /**
@@ -94,9 +94,12 @@ async function salvar(req, u) {
   if (operacao === 'especialidades') return salvarEspecialidades(d, u);
 
   const nome = limpar(d.name);
-  const telefone = limpar(d.phone);
+  const telefone = telefoneKey(d.phone);
   if (!nome) return erro('Informe o nome completo.', 422);
-  if (!telefone) return erro('Informe um telefone de contato.', 422);
+  if (!telefone) return erro('Informe um telefone com DDD.', 422);
+  if (!telefoneValido(telefone)) {
+    return erro('Telefone inválido. Informe DDD + número (10 ou 11 dígitos).', 422);
+  }
 
   if (u.role === 'client') {
     const cpf = digitos(d.cpf);

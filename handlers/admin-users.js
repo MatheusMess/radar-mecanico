@@ -1,7 +1,7 @@
 import {
   json, erro, rota, lerCorpo, limpar, csrfOk, comSessao,
 } from '../lib/http.js';
-import { all, run } from '../lib/db.js';
+import { all, run, telefoneKey, telefoneValido } from '../lib/db.js';
 import { hashSenha } from '../lib/auth.js';
 
 /**
@@ -34,11 +34,16 @@ export default rota(async (req) => {
     const nome = limpar(d.name);
     const email = String(d.email ?? '').trim().toLowerCase();
     const senha = String(d.password ?? '');
+    const telefone = telefoneKey(d.phone);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return erro('Informe um e-mail válido.', 422);
     if (!nome) return erro('Informe o nome.', 422);
     if (senha.length < 8) return erro('A senha deve ter ao menos 8 caracteres.', 422);
+    // O telefone e opcional aqui, mas se vier precisa ser um numero de verdade.
+    if (telefone && !telefoneValido(telefone)) {
+      return erro('Telefone inválido. Informe DDD + número (10 ou 11 dígitos).', 422);
+    }
     await run('INSERT INTO users(role,name,email,password_hash,phone) VALUES($1,$2,$3,$4,$5)',
-      ['admin', nome, email, await hashSenha(senha), limpar(d.phone) || 'Não informado']);
+      ['admin', nome, email, await hashSenha(senha), telefone || 'Não informado']);
     return json({ ok: true });
   }
 
