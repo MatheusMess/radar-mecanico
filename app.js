@@ -389,7 +389,7 @@ async function workshopDetail(id) {
     <hr class="rule">
     <p>${e(w.description || 'Esta oficina ainda não escreveu uma descrição.')}</p>
     <div class="contact-row"><i>◎</i> ${e(w.city)}${w.address ? ` · ${e(w.address)}` : ''}</div>
-    <div class="contact-row"><i>☎</i> ${e(fmtFone(w.phone))}</div>
+    <div class="contact-row"><i>☎</i> ${e(fmtFone(w.phone) || w.phone)}</div>
     ${w.opening_hours ? `<div class="contact-row"><i>◷</i> ${e(w.opening_hours)}</div>` : ''}
     ${w.garagem ? '<p class="hint"><b>Garagem própria:</b> o veículo do cliente fica guardado no local.</p>' : ''}
     ${w.especialidades?.length ? `<h3 class="panel-title">Especialidades</h3><div class="tag-row">${w.especialidades.map((x) => `<span class="tag">${e(x.nome)}</span>`).join('')}</div>` : ''}
@@ -484,7 +484,7 @@ async function profile() {
       ? `<div class="two-col"><div><label class="form-label">Nome do responsável</label><input class="input" name="name" value="${e(r.user.name)}" required></div><div><label class="form-label">Telefone</label><input class="input" name="phone" type="tel" inputmode="tel" value="${e(fmtFone(r.user.phone))}" oninput="maskFone(this)" required></div></div><div class="two-col"><div><label class="form-label">Razão social</label><input class="input" name="legal_name" value="${e(w.legal_name)}" required></div><div><label class="form-label">CNPJ</label><input class="input" name="cnpj" value="${e(fmtDoc(w.cnpj))}" required oninput="maskCpfCnpj(this)"></div></div><label class="form-label">Endereço</label><input class="input" name="address" value="${e(w.address)}" required><div class="two-col"><div><label class="form-label">Cidade</label><input class="input" name="city" value="${e(w.city)}" required></div><div><label class="form-label">Horário de funcionamento</label><input class="input" name="opening_hours" value="${e(w.opening_hours)}" placeholder="Seg–Sex, 08:00–18:00"></div></div><label class="form-label">Serviços atendidos</label><input class="input" name="services" value="${e(w.services)}" placeholder="Revisão, freios, elétrica"><label class="form-label">Descrição pública</label><textarea class="input" name="description" rows="4" placeholder="Conte o que a oficina faz de melhor.">${e(w.description)}</textarea>`
       : `<div class="two-col"><div><label class="form-label">Nome completo</label><input class="input" name="name" value="${e(r.user.name)}" required></div><div><label class="form-label">Telefone</label><input class="input" name="phone" type="tel" inputmode="tel" value="${e(fmtFone(r.user.phone))}" oninput="maskFone(this)" required></div></div><div class="two-col"><div><label class="form-label">CPF</label><input class="input" name="cpf" value="${e(fmtDoc(r.user.cpf))}" required oninput="maskCpfCnpj(this)"></div><div><label class="form-label">E-mail</label><input class="input" value="${e(r.user.email)}" disabled></div></div><p class="hint">As fotos dos seus veículos ficam visíveis para as oficinas que recebem seus pedidos.</p>`;
 
-  return `<div class="eyebrow">Dados da conta</div><h1 class="page-title">${office ? 'Dados da Oficina' : admin ? 'Minha conta' : 'Meus dados'}</h1><p class="subhead">${office ? 'Estas informações aparecem para os clientes que procuram sua oficina.' : 'Atualize os dados usados no atendimento e nas solicitações de orçamento.'}</p>${office ? avaliacaoPublica(r) : ''}${kpis.length ? `<section class="office-kpi garage-kpi">${kpis.map((k) => `<div class="metric"><small>${k[0]}</small><b>${k[1]}</b><span>no sistema</span></div>`).join('')}</section>` : ''}<section class="profile-panel"><form id="profileForm"><h2 class="panel-title">${office ? 'Dados da oficina' : 'Dados pessoais'}</h2>${dados}${office ? garagemCheck(w) : ''}<button class="btn primary full">Salvar alterações</button></form>${office ? especialidadesForm(r) : ''}${office ? '' : enderecosForm(r.enderecos || [])}<hr class="rule"><form id="passwordForm"><h2 class="panel-title">Alterar senha</h2><label class="form-label">Senha atual</label><input class="input" name="current_password" type="password" autocomplete="current-password" required><div class="two-col"><div><label class="form-label">Nova senha</label><input class="input" name="new_password" type="password" minlength="8" autocomplete="new-password" required></div><div><label class="form-label">Repetir nova senha</label><input class="input" name="new_password2" type="password" minlength="8" autocomplete="new-password" required></div></div><button class="btn ghost full">Atualizar senha</button></form>${office ? fotoOficinaForm(r) : ''}</section>${office ? `<section class="profile-panel"><h2 class="panel-title">Avaliações recebidas</h2>${commentBlock(r.reviews, 20)}</section>` : ''}`;
+  return `<div class="eyebrow">Dados da conta</div><h1 class="page-title">${office ? 'Dados da Oficina' : admin ? 'Minha conta' : 'Meus dados'}</h1><p class="subhead">${office ? 'Estas informações aparecem para os clientes que procuram sua oficina.' : 'Atualize os dados usados no atendimento e nas solicitações de orçamento.'}</p>${office ? avaliacaoPublica(r) : ''}${kpis.length ? `<section class="office-kpi garage-kpi">${kpis.map((k) => `<div class="metric"><small>${k[0]}</small><b>${k[1]}</b><span>no sistema</span></div>`).join('')}</section>` : ''}<section class="profile-panel"><form id="profileForm"><h2 class="panel-title">${office ? 'Dados da oficina' : 'Dados pessoais'}</h2>${dados}${office ? garagemCheck(w) : ''}<button class="btn primary full">Salvar alterações</button></form>${office ? especialidadesForm(r) : ''}${office ? '' : enderecosForm(r.enderecos || [])}<hr class="rule"><form id="passwordForm"><h2 class="panel-title">Alterar senha</h2><label class="form-label">Senha atual</label><input class="input" name="current_password" type="password" autocomplete="current-password" required><div class="two-col"><div><label class="form-label">Nova senha</label><input class="input" name="new_password" type="password" minlength="8" autocomplete="new-password" required></div><div><label class="form-label">Repetir nova senha</label><input class="input" name="new_password2" type="password" minlength="8" autocomplete="new-password" required></div></div><button class="btn ghost full">Atualizar senha</button></form>${office ? fotoOficinaForm(r) : ''}</section>${office ? `<section class="profile-panel"><h2 class="panel-title">Avaliações recebidas</h2>${commentBlock(r.reviews, 20)}</section>` : ''}<div class="profile-sair"><button class="btn ghost full" onclick="logout()">Sair da conta</button></div>`;
 }
 
 /** Oficina com garagem própria: muda o jeito de falar do serviço. */
@@ -903,6 +903,7 @@ function modal(titulo, conteudo, opcoes = {}) {
 function descartarModaisOrfaos() {
   if (!pilhaModal.length) {
     for (const orfao of document.querySelectorAll('.modal-back')) orfao.remove();
+    travarRolagem(false);
   }
 }
 
@@ -913,6 +914,7 @@ function sincronizarPilha() {
     // Nao ha entrada correspondente: e um orfao de uma camada ja removida.
     el.remove();
   }
+  if (!pilhaModal.length) travarRolagem(false);
 }
 
 /**
@@ -923,9 +925,27 @@ function modaisNaTela() {
   return document.querySelectorAll('.modal-back').length;
 }
 
+/**
+ * Trava a rolagem do fundo enquanto houver modal. Sem isso, no celular o dedo
+ * arrastava a pagina atras do modal ao chegar no fim da lista de avaliacoes: o
+ * modal ficava parado e o fundo andava, dando a impressao de tela quebrada.
+ */
+function travarRolagem(travar) {
+  if (travar) {
+    // Compensa a barra de rolagem que desaparece, para o layout nao pular.
+    const barra = Math.max(0, window.innerWidth - document.documentElement.clientWidth);
+    document.body.style.setProperty('--barra-rolagem', `${barra}px`);
+    document.body.classList.add('modal-aberto');
+    return;
+  }
+  document.body.classList.remove('modal-aberto');
+  document.body.style.removeProperty('--barra-rolagem');
+}
+
 /** Aplica o papel de fundo em tudo menos a camada de cima. */
 function marcarCamadas() {
   pilhaModal.forEach((c, i) => c.el.classList.toggle('abaixo', i < pilhaModal.length - 1));
+  travarRolagem(pilhaModal.length > 0);
 }
 
 function focarPrimeiro(el) {
@@ -1102,7 +1122,7 @@ async function adminPanel() {
   const users = r.users;
   const clients = users.filter((x) => x.role === 'client').length;
   const shops = users.filter((x) => x.role === 'workshop').length;
-  return `<div class="dashboard-top"><div><div class="eyebrow">Acesso administrativo</div><h1 class="page-title">Central de controle</h1><p class="subhead">Gerencie contas, permissões e segurança do Radar Mecânico.</p></div><button class="btn primary" onclick="adminModal()">+ Criar administrador</button></div><section class="office-kpi"><div class="metric"><small>Total de contas</small><b>${users.length}</b><span>Todos os perfis</span></div><div class="metric"><small>Clientes</small><b>${clients}</b><span>Contas cadastradas</span></div><div class="metric"><small>Oficinas</small><b>${shops}</b><span>Parceiras cadastradas</span></div><div class="metric"><small>Bloqueadas</small><b>${users.filter((x) => +x.is_blocked).length}</b><span>Acesso suspenso</span></div></section><div class="section-head"><h2 class="section-title">Usuários do sistema</h2></div><div class="request-list">${users.map((u) => `<article class="request"><div><strong>${e(u.name)}</strong><small>${e(u.email)} · desde ${e(u.created_at)}</small></div><div><small>PERFIL</small><strong>${u.role === 'admin' ? 'Administrador' : u.role === 'workshop' ? 'Oficina' : 'Cliente'}</strong></div><div><small>TELEFONE</small><strong>${e(u.phone)}</strong></div><div><span class="status ${+u.is_blocked ? 'open' : 'responded'}">${+u.is_blocked ? 'Bloqueado' : 'Ativo'}</span></div><button class="btn ghost" ${+u.id === +me.id ? 'disabled' : ''} onclick="toggleUser(${u.id})">${+u.is_blocked ? 'DESBLOQUEAR' : 'BLOQUEAR'}</button></article>`).join('')}</div>`;
+  return `<div class="dashboard-top"><div><div class="eyebrow">Acesso administrativo</div><h1 class="page-title">Central de controle</h1><p class="subhead">Gerencie contas, permissões e segurança do Radar Mecânico.</p></div><button class="btn primary" onclick="adminModal()">+ Criar administrador</button></div><section class="office-kpi"><div class="metric"><small>Total de contas</small><b>${users.length}</b><span>Todos os perfis</span></div><div class="metric"><small>Clientes</small><b>${clients}</b><span>Contas cadastradas</span></div><div class="metric"><small>Oficinas</small><b>${shops}</b><span>Parceiras cadastradas</span></div><div class="metric"><small>Bloqueadas</small><b>${users.filter((x) => +x.is_blocked).length}</b><span>Acesso suspenso</span></div></section><div class="section-head"><h2 class="section-title">Usuários do sistema</h2></div><div class="request-list">${users.map((u) => `<article class="request"><div><strong>${e(u.name)}</strong><small>${e(u.email)} · desde ${e(u.created_at)}</small></div><div><small>PERFIL</small><strong>${u.role === 'admin' ? 'Administrador' : u.role === 'workshop' ? 'Oficina' : 'Cliente'}</strong></div><div><small>TELEFONE</small><strong>${e(fmtFone(u.phone) || u.phone || '—')}</strong></div><div><span class="status ${+u.is_blocked ? 'open' : 'responded'}">${+u.is_blocked ? 'Bloqueado' : 'Ativo'}</span></div><button class="btn ghost" ${+u.id === +me.id ? 'disabled' : ''} onclick="toggleUser(${u.id})">${+u.is_blocked ? 'DESBLOQUEAR' : 'BLOQUEAR'}</button></article>`).join('')}</div>`;
 }
 
 function adminModal() {

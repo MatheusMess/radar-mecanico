@@ -70,7 +70,9 @@
 .timeline li:before{content:'';position:absolute;top:-7px;left:0;width:10px;height:10px;background:var(--line);border-radius:50%}
 .timeline li.done:before,.timeline li.on:before{background:var(--orange)}
 .timeline li.on{color:var(--orange)}
-.request{grid-template-columns:1.1fr .8fr .7fr .8fr auto}
+/* So no desktop: esta regra vinha depois da de celular e vencia o grid de 2
+   colunas, deixando os cartoes de pedido mais largos que a tela. */
+@media(min-width:801px){.request{grid-template-columns:1.1fr .8fr .7fr .8fr auto}}
 .request-acts{display:flex;gap:6px;align-items:center;justify-content:flex-end;flex-wrap:wrap}
 .reviewed{font-size:9px;font-weight:700;text-transform:uppercase;color:var(--good);border:1px solid #48c78e55;padding:4px 7px}
 .light .reviewed{color:#1f8f63;border-color:#1f8f6355}
@@ -163,14 +165,22 @@ input:disabled,.input:disabled{background:var(--surface2);color:var(--muted);cur
    "fechar" atingia a camada errada. Aqui a camada de baixo encolhe e escurece,
    o que faz o papel de fundo e deixa obvio qual esta na frente.
    --------------------------------------------------------------------- */
-.modal-back{position:fixed;inset:0;display:grid;place-items:center;padding:15px;background:#000000b3;
-  backdrop-filter:blur(2px);transition:background .18s ease,backdrop-filter .18s ease}
-.modal-back.abaixo{z-index:40;background:#00000066}
+.modal-back{position:fixed;inset:0;z-index:45;display:grid;place-items:center;padding:15px;background:#000000b3;
+  backdrop-filter:blur(2px);touch-action:none;transition:background .18s ease,backdrop-filter .18s ease}
+/* A camada de baixo precisa ficar atras da de cima. Antes ela tinha z-index 40 e
+   a de cima nenhum, entao o modal de baixo aparecia por cima do de cima. */
+.modal-back.abaixo{z-index:44;background:#00000066}
 .modal-back.modal-foto{z-index:60}
 
-.modal{width:min(580px,100%);max-height:92vh;overflow:auto;background:var(--surface);
-  border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);
+/* 92vh + 15px de margem em cima e embaixo passa de 100vh no celular: o rodape do
+   modal ficava fora da tela e a lista de avaliacoes nao chegava ao fim. dvh usa a
+   altura realmente visivel, descontando a barra de endereco do navegador. */
+.modal{width:min(580px,100%);max-height:calc(100vh - 30px);max-height:calc(100dvh - 30px);overflow:auto;
+  background:var(--surface);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);
+  overscroll-behavior:contain;-webkit-overflow-scrolling:touch;touch-action:pan-y pinch-zoom;
   transition:transform .18s ease,opacity .18s ease}
+/* Com modal aberto o fundo nao rola mais junto (era o que fazia a tela "flutuar"). */
+body.modal-aberto{overflow:hidden;padding-right:var(--barra-rolagem,0);overscroll-behavior:none}
 /* A de baixo encolhe um pouco: da para ver que ainda esta aberta atras. */
 .modal-back.abaixo .modal{transform:scale(.955) translateY(6px);opacity:.5;filter:saturate(.6)}
 .modal-largo{width:min(980px,100%)}
@@ -190,3 +200,58 @@ input:disabled,.input:disabled{background:var(--surface2);color:var(--muted);cur
 .lightbox img:focus-visible{outline:2px solid var(--orange)}
 @media(max-width:560px){.lightbox img{max-height:60vh}}
 @media(prefers-reduced-motion:reduce){.modal-back,.modal{transition:none}}
+
+/* --- Celular: correcoes de layout ---------------------------------------
+   Barra do topo e navegacao inferior sao fixas. O modal fica acima das duas
+   (z-index 45) e usa dvh, para nao terminar atras da barra de endereco. Aqui
+   ficam os ajustes que dependem da largura da tela; as regras de modal acima
+   valem para qualquer tamanho.
+   --------------------------------------------------------------------- */
+/* So aparece no celular, onde o "Sair" do topo esta escondido. */
+.profile-sair{display:none}
+@media(max-width:800px){
+  /* Sem isso o iOS da zoom ao focar um campo: a tela inteira "pula". */
+  input,select,textarea,.input{font-size:16px}
+
+  /* Home indicator do iPhone encostava nos botoes da navegacao. */
+  .shell{padding-bottom:calc(56px + env(safe-area-inset-bottom))}
+  .side{height:auto;min-height:56px;padding-bottom:env(safe-area-inset-bottom)}
+
+  /* O aviso aparecia em cima dos botoes da navegacao. */
+  .toast{left:12px;right:12px;bottom:calc(64px + env(safe-area-inset-bottom));text-align:center}
+
+  /* Cartoes de pedido e da administracao: 2 colunas e conteudo que pode
+     quebrar (e-mail, nome de oficina) sem esticar a pagina. */
+  .request{grid-template-columns:1fr 1fr}
+  .request>*{min-width:0}
+  .request strong,.request small{overflow-wrap:anywhere}
+  .request-acts{grid-column:1/-1;justify-content:flex-start}
+
+  /* Abas rolam na horizontal sem barra visivel. */
+  .tabs{scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+
+  /* O seletor nativo de arquivo e mais largo que a tela e era cortado pelo
+     overflow do .upload-zone. */
+  .upload-zone input[type=file]{width:100%;max-width:100%}
+
+  /* Alvos de toque maiores que o minimo confortavel. */
+  .close{width:40px;height:40px}
+  .modal-back{padding:8px;padding-bottom:max(8px,env(safe-area-inset-bottom))}
+  /* 100% da area livre do .modal-back: desconta a margem e a area segura sem
+     precisar repetir o calculo em cada aparelho. */
+  .modal{max-height:100%;border-radius:14px}
+
+  /* No celular o "Sair" do topo fica escondido; sem esta saida nao havia como
+     encerrar a sessao pelo aparelho. */
+  .profile-sair{display:block;margin-top:14px}
+
+  /* Comentario de avaliacao sem espacos nao pode furar o card. */
+  .review p,.review-head b{overflow-wrap:anywhere}
+}
+
+@media(max-width:560px){
+  .auth-panel{padding:22px 20px}
+  .modal-head{padding:11px 13px}
+  .modal-body{padding:13px}
+}

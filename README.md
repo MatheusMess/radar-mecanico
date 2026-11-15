@@ -296,6 +296,20 @@ elemento, fechar sempre age na de cima, e a camada de baixo **encolhe e escurece
 claro qual está na frente. Também: `Esc` sobe uma camada, clicar fora fecha a de cima, `Tab`
 fica preso na camada de cima, e o foco volta para onde estava.
 
+**No celular, o modal fica acima das barras fixas e usa `dvh`.** A barra do topo (`z-index` 10) e
+a navegação inferior (9) são fixas; o `.modal-back` sem `z-index` ficava atrás das duas, então
+parte do modal aparecia por baixo delas — e a camada de baixo, com `z-index` 40, subia na frente da
+de cima. Agora a base é 45, a camada de baixo 44 e o zoom da foto 60. A altura máxima usa
+`100dvh - 16px` (com `vh` de reserva) porque `92vh` mais a margem passa da tela no iOS e cortava o
+fim da lista de avaliações. Enquanto há modal aberto o `body` recebe `overflow:hidden` (com
+compensação da barra de rolagem), senão o dedo arrastava o fundo e a tela parecia flutuar. Campos
+de formulário ficam com 16px no celular, o mínimo para o iOS não dar zoom ao focar.
+
+**Cuidado com a ordem das regras responsivas.** A regra de 5 colunas de `.request` (pedidos e
+lista de usuários do admin) vinha *depois* do `@media(max-width:800px)`, então vencia o grid de 2
+colunas e os cartões ficavam mais largos que a tela, com rolagem horizontal. Ela agora está em
+`@media(min-width:801px)`.
+
 **A sessão é um cookie assinado, não um arquivo.** No PHP a sessão vivia em `storage/sessions`;
 isso não funciona em serverless. Agora o cookie `sessao` carrega `id do usuário + validade`
 assinados com HMAC-SHA256 e lidos por qualquer instância. `HttpOnly` + `SameSite=Lax` + `Secure`
